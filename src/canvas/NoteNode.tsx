@@ -1,16 +1,28 @@
-import { memo } from "react";
+import { memo, useCallback } from "react";
 import type { NodeProps } from "@xyflow/react";
 import { StickyNote } from "lucide-react";
 
+import { useGraph } from "../store/graph";
+import { useKbStat } from "../store/kbLinks";
 import type { FlowNode } from "./flow";
+import { NOTE_FILE } from "./kbLink";
+import { KbLinkField } from "./KbLinkField";
 import { NodeHandles } from "./NodeHandles";
-import { notePreview } from "./NodeParts";
 import { NodeTitle } from "./NodeTitle";
 import { fillStyle } from "./palette";
 
+/**
+ * Нода-заметка — карточка .md-файла базы знаний (ТЗ §4.10): заголовок = имя
+ * файла, под ним — ссылка на файл, ниже — превью его первых строк.
+ */
 function NoteNodeImpl({ data, selected }: NodeProps<FlowNode>) {
   const m = data.model;
-  const text = notePreview(m.body);
+  const updateNode = useGraph((s) => s.updateNode);
+  const preview = useKbStat(m.kbPath)?.preview;
+  const setLink = useCallback(
+    (kbPath: string | null) => updateNode(m.canvasId, m.id, { kbPath }),
+    [updateNode, m.canvasId, m.id],
+  );
   return (
     <div
       className={`g-node g-note${selected ? " is-selected" : ""}${m.color ? " is-filled" : ""}`}
@@ -21,7 +33,8 @@ function NoteNodeImpl({ data, selected }: NodeProps<FlowNode>) {
         <StickyNote className="note-icon" size={14} strokeWidth={2} />
         <NodeTitle model={m} placeholder="Заметка" />
       </div>
-      {text && <div className="note-preview">{text}</div>}
+      <KbLinkField slot={NOTE_FILE} path={m.kbPath} title={m.title} onSet={setLink} />
+      {preview && <div className="note-preview">{preview}</div>}
     </div>
   );
 }

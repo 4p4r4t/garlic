@@ -38,6 +38,7 @@ import {
   parseStatusColors,
   type StatusColors,
 } from "../canvas/palette";
+import { rebase } from "../kb/paths";
 import { viewportBus } from "../layers/viewportBus";
 
 export interface CanvasView {
@@ -167,6 +168,22 @@ interface GraphState {
   setStatusColor: (status: TaskStatus, color: string | null) => Promise<void>;
   /** Статус всем задачам из ids (заметки пропускаются) одним пакетом. */
   setStatusMany: (canvasId: string, ids: string[], status: TaskStatus) => Promise<void>;
+
+  // --- ссылки на базу знаний (ТЗ §4.10, M5.2) ---
+  /**
+   * Путь `from` в vault стал `to` (переименование/перемещение — своё или снаружи;
+   * в БД уже переписано): ссылки нод в кэше холстов переписываются так же,
+   * заголовок ноды-заметки = имя её файла.
+   */
+  rewriteKbPaths: (from: string, to: string) => void;
+  /** Перечитать просвечивающие уровни верхнего холста. */
+  refreshSubtree: () => Promise<void>;
+}
+
+/** Имя файла заметки без .md; не заметка — null. */
+export function noteStem(path: string): string | null {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  return name.toLowerCase().endsWith(".md") && name.length > 3 ? name.slice(0, -3) : null;
 }
 
 function toView(data: CanvasData): CanvasView {
@@ -412,11 +429,10 @@ export const useGraph = create<GraphState>()((set, get) => {
       try {
         const model = await api.createNode({ canvasId, kind, x: pos.x, y: pos.y });
         patchView(canvasId, (v) => ({ ...v, nodes: [...v.nodes, toFlowNode(model)] }));
-        if (kind === "task") {
-          // Новая задача сразу открывается на редактирование заголовка (ТЗ §4.2).
-          set({ editingNodeId: model.id });
-          refreshOwnerProgress(canvasId);
-        }
+        // Новая нода сразу открывается на редактирование заголовка (ТЗ §4.2);
+        // у заметки заголовок — имя её .md: переименование переименует файл.
+        set({ editingNodeId: model.id });
+        if (kind === "task") refreshOwnerProgress(canvasId);
         return model;
       } catch (e) {
         get().showError(e);
@@ -436,6 +452,7 @@ export const useGraph = create<GraphState>()((set, get) => {
     },
 
     updateNode: async (canvasId, id, patch) => {
+      const before = get().canvases[canvasId]?.nodes.find((n) => n.id === id)?.data.model.kbPath;
       // Оптимистично: сразу в UI, при ошибке — перечитать холст.
       setModel(canvasId, id, (m) => ({ ...m, ...patch }));
       if ("status" in patch) refreshOwnerProgress(canvasId);
@@ -443,6 +460,10 @@ export const useGraph = create<GraphState>()((set, get) => {
         const fresh = await api.updateNode(id, patch);
         // Позиция живёт в FlowNode.position, поэтому x/y из ответа не мешают.
         setModel(canvasId, id, (m) => ({ ...fresh, x: m.x, y: m.y }));
+        // Заголовок ноды-заметки переименовал её файл — ссылки других нод тоже.
+        if (!("kbPath" in patch) && before && fresh.kbPath && fresh.kbPath !== before) {
+          get().rewriteKbPaths(before, fresh.kbPath);
+        }
         // Пути в тултипах просвечивающих нод содержат заголовки владельцев.
         if ("title" in patch && canvasId === topCanvas() && get().subtree?.levels.length) {
           void refreshSubtree();
@@ -691,6 +712,31 @@ export const useGraph = create<GraphState>()((set, get) => {
       // Просвечивающие ноды показывают статус и бейджи — перечитываем.
       await refreshSubtree();
     },
+
+    rewriteKbPaths: (from, to) => {
+      if (!from || from === to) return;
+      set((s) => {
+        let changed = false;
+        const canvases: Record<string, CanvasView> = {};
+        for (const [cid, v] of Object.entries(s.canvases)) {
+          let hit = false;
+          const nodes = v.nodes.map((n) => {
+            const m = n.data.model;
+            const next = m.kbPath ? rebase(m.kbPath, from, to) : null;
+            if (next === null) return n;
+            const title = m.kind === "note" ? (noteStem(next) ?? m.title) : m.title;
+            if (next === m.kbPath && title === m.title) return n;
+            hit = true;
+            return { ...n, data: { ...n.data, model: { ...m, kbPath: next, title } } };
+          });
+          canvases[cid] = hit ? { ...v, nodes } : v;
+          changed ||= hit;
+        }
+        return changed ? { canvases } : {};
+      });
+    },
+
+    refreshSubtree,
 
     showError: (e) => {
       const msg = errorMessage(e);

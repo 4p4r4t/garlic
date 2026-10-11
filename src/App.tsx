@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { LayerStack } from "./layers/LayerStack";
 import { TaskOverview } from "./overview/TaskOverview";
 import { useGraph } from "./store/graph";
+import { useKbLinks } from "./store/kbLinks";
 import { useMode } from "./store/mode";
 import { Topbar } from "./topbar/Topbar";
 
@@ -21,6 +22,7 @@ export default function App() {
   useEffect(() => {
     void init();
     void useMode.getState().init();
+    void useKbLinks.getState().init();
   }, [init]);
 
   // Ctrl+1 / Ctrl+2 — «Граф» / «База» (ТЗ §4.10).

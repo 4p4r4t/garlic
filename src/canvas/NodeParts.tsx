@@ -50,11 +50,3 @@ export function PlainTitle({ model, placeholder }: { model: NodeModel; placehold
   );
 }
 
-/** Превью первых строк тела заметки (редактор Markdown — M5). */
-export function notePreview(body: string): string {
-  return body
-    .split("\n")
-    .filter((l) => l.trim())
-    .slice(0, 3)
-    .join("\n");
-}

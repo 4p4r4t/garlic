@@ -1627,3 +1627,297 @@ button.crumb:hover {
 .st-btn:hover:not(:disabled) {
   border-color: #7f6df2;
 }
+
+/* ================= M5.2: ссылки нод на базу знаний (ТЗ §4.10) ================= */
+
+/* поле-ссылка под заголовком: пусто — неброский плейсхолдер, иначе иконка + имя */
+.kb-link-row {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.g-note .kb-link-row {
+  margin-top: 5px;
+}
+
+.kb-link-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 1px;
+  color: var(--node-muted);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.kb-link {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  max-width: calc(100% + 12px);
+  min-width: 0;
+  height: 20px;
+  margin: 0 -6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--node-muted);
+  font-size: 11.5px;
+  line-height: 16px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 100ms, color 100ms, opacity 100ms;
+}
+
+button.kb-link:hover,
+button.kb-link:focus-visible {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--node-fg);
+  outline: none;
+}
+
+.g-node.is-filled button.kb-link:hover {
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.kb-link-icon {
+  flex: none;
+}
+
+.kb-link-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.kb-link.is-empty {
+  opacity: 0.5;
+}
+
+.react-flow__node:hover .kb-link.is-empty,
+.kb-link.is-empty:focus-visible {
+  opacity: 0.85;
+}
+
+.kb-link.is-note,
+.kb-link.is-folder {
+  color: #b3a9f4;
+}
+
+.kb-link.is-note .kb-link-text,
+.kb-link.is-folder .kb-link-text {
+  text-decoration: underline;
+  text-decoration-color: rgba(179, 169, 244, 0.35);
+  text-underline-offset: 2px;
+}
+
+.g-node.is-filled .kb-link.is-note,
+.g-node.is-filled .kb-link.is-folder {
+  color: inherit;
+}
+
+.g-node.is-filled .kb-link.is-note .kb-link-text,
+.g-node.is-filled .kb-link.is-folder .kb-link-text {
+  text-decoration-color: currentColor;
+}
+
+.kb-link.is-broken {
+  color: var(--danger);
+}
+
+.kb-link-missing {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgba(224, 112, 122, 0.16);
+  font-size: 10.5px;
+}
+
+.g-node.is-filled .kb-link.is-broken {
+  color: inherit;
+}
+
+.g-node.is-filled .kb-link-missing {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* только картинка (якорь слоя, просвечивающие ноды): размеры те же, без событий;
+   пустое поле не рисуется, но место держит — якорь совпадает с нодой под ним */
+.kb-link.is-readonly {
+  pointer-events: none;
+  cursor: inherit;
+}
+
+.kb-link.is-readonly.is-empty {
+  visibility: hidden;
+}
+
+.g-task.status-done .kb-link-text {
+  text-decoration-line: none;
+}
+
+/* ---------- меню поля (портал) ---------- */
+
+.popup-menu {
+  z-index: 65;
+  min-width: 190px;
+}
+
+.ctx-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.ctx-item.is-danger:hover,
+.ctx-item.is-danger:focus-visible {
+  color: var(--danger);
+}
+
+.ctx-item.is-danger:hover svg {
+  color: var(--danger);
+}
+
+.ctx-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ---------- «Привязать существующее…» ---------- */
+
+.kbp-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.kbp {
+  position: absolute;
+  top: 12vh;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100vw - 32px));
+  max-height: 70vh;
+  transform: translateX(-50%);
+  background: var(--menu-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.kbp-title {
+  padding: 10px 14px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.kbp-input {
+  margin: 8px 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--node-border);
+  border-radius: 7px;
+  outline: none;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+
+.kbp-input:focus {
+  border-color: #7f6df2;
+}
+
+.kbp-list {
+  flex: 1;
+  min-height: 0;
+  padding: 0 6px 6px;
+  overflow-y: auto;
+}
+
+.kbp-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.kbp-item.is-selected {
+  background: var(--menu-hover);
+}
+
+.kbp-icon {
+  flex: none;
+  color: var(--muted);
+}
+
+.kbp-name {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.kbp-name b {
+  color: #b3a9f4;
+  font-weight: 600;
+}
+
+.kbp-item.is-current .kbp-name::after {
+  content: " · текущая";
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.kbp-path {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+
+.kbp-empty {
+  padding: 14px;
+  color: var(--faint);
+  text-align: center;
+}
+
+.kbp-empty.is-error {
+  color: var(--danger);
+}
+
+/* ---------- настройки: папка для новых заметок ---------- */
+
+.st-folder {
+  margin-top: 10px;
+}
+
+.st-subtitle {
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.st-folder-btn {
+  max-width: 100%;
+}
+
+.st-folder-btn span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

@@ -205,3 +205,18 @@ export interface LinkedNode {
   /** Холсты от корневого холста пространства до холста ноды — аргумент `revealNode`. */
   canvasChain: string[];
 }
+
+// ---- ссылки нод на базу знаний (ТЗ §4.10, M5.2), src-tauri/src/kblink.rs ----
+
+/** Что создаёт поле-ссылка. */
+export type LinkTarget = "note" | "folder";
+
+/** Состояние пути ссылки (`kb_stat`). */
+export interface KbStat {
+  path: string;
+  /** Путь существует (папка или .md). */
+  exists: boolean;
+  isDir: boolean;
+  /** Превью первых строк — только у существующих заметок. */
+  preview: string | null;
+}

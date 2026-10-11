@@ -499,9 +499,15 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
   );
 
   const onNodeDoubleClick = useCallback(
-    // M5: у заметки двойной клик откроет редактор Markdown; пока — заголовок.
-    (_: ReactMouseEvent, node: FlowNode) => {
-      if (node.type === "task" || node.type === "note") startEditing(node.id);
+    // Двойной клик по заголовку — переименование; по остальной карточке
+    // ноды-заметки — открыть её .md в режиме «База» (ТЗ §4.10).
+    (event: ReactMouseEvent, node: FlowNode) => {
+      if (node.type === "task") startEditing(node.id);
+      if (node.type !== "note") return;
+      const onTitle = (event.target as HTMLElement).closest?.(".node-title");
+      const path = node.data.model.kbPath;
+      if (!onTitle && path) useMode.getState().openInKb({ kind: "open", path });
+      else startEditing(node.id);
     },
     [startEditing],
   );

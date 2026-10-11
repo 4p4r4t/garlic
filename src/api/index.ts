@@ -10,6 +10,8 @@ import type {
   Canvas,
   CanvasData,
   EdgeModel,
+  KbStat,
+  LinkTarget,
   LinkedNode,
   NewEdge,
   NewNode,
@@ -126,6 +128,16 @@ export const api = {
   vaultAbsPath: (path: string) => rawInvoke<string>("vault_abs_path", { path }),
   /** Ноды всех пространств с kb_path == path. */
   kbLinkedNodes: (path: string) => invoke<LinkedNode[]>("kb_linked_nodes", { path }),
+
+  // ссылки нод (ТЗ §4.10, M5.2): операции с путём, запись в ноду — updateNode.
+  /** Новая заметка/папка для поля-ссылки в `dir` (null — папка по умолчанию; создаётся) → путь. */
+  kbCreateTarget: (kind: LinkTarget, dir: string | null, name: string) =>
+    invokeVault<string>("kb_create_target", { kind, dir, name }),
+  /** «Заметка → папка»: папка рядом с заметкой, заметка внутрь, ссылки нод переписаны → путь папки. */
+  kbNoteToFolder: (path: string, folderName: string) =>
+    invokeVault<string>("kb_note_to_folder", { path, folderName }),
+  /** Существование путей и превью заметок. */
+  kbStat: (paths: string[]) => rawInvoke<KbStat[]>("kb_stat", { paths }),
 };
 
 /** Ошибка записи из-за изменения файла снаружи (`AppError::Conflict`). */

@@ -8,9 +8,12 @@ import { StickyNote } from "lucide-react";
 import type { TaskStatus } from "../api";
 import type { FlowNode, Progress } from "../canvas/flow";
 import { NodeHandles } from "../canvas/NodeHandles";
-import { notePreview, PlainTitle, ProgressBadge, StatusIcon, STATUS_META } from "../canvas/NodeParts";
+import { NOTE_FILE, TASK_LINK } from "../canvas/kbLink";
+import { KbLinkField } from "../canvas/KbLinkField";
+import { PlainTitle, ProgressBadge, StatusIcon, STATUS_META } from "../canvas/NodeParts";
 import { fillStyle, nodeFillColor } from "../canvas/palette";
 import { useStatusColors } from "../store/graph";
+import { useKbStat } from "../store/kbLinks";
 
 /**
  * Нода-родитель открытого слоя: выглядит ровно как на своём холсте и лежит на
@@ -30,6 +33,7 @@ function AnchorNodeImpl({ data }: NodeProps<FlowNode>) {
     >
       <NodeHandles />
       <PlainTitle model={m} placeholder="Без названия" />
+      <KbLinkField slot={TASK_LINK} path={m.kbPath} title={m.title} />
       <TaskFoot status={status} progress={data.progress} />
     </div>
   );
@@ -44,8 +48,8 @@ function GhostNodeImpl({ data }: NodeProps<FlowNode>) {
   const depth = Math.min(data.depth ?? 1, 3);
   const color = nodeFillColor(m, useStatusColors());
   const fill = fillStyle(color);
+  const text = useKbStat(m.kind === "note" ? m.kbPath : null)?.preview;
   if (m.kind === "note") {
-    const text = notePreview(m.body);
     return (
       <div className={`g-node g-note is-ghost ghost-d${depth}${color ? " is-filled" : ""}`} style={fill}>
         <NodeHandles inert />
@@ -53,6 +57,7 @@ function GhostNodeImpl({ data }: NodeProps<FlowNode>) {
           <StickyNote className="note-icon" size={14} strokeWidth={2} />
           <PlainTitle model={m} placeholder="Заметка" />
         </div>
+        <KbLinkField slot={NOTE_FILE} path={m.kbPath} title={m.title} />
         {text && <div className="note-preview">{text}</div>}
       </div>
     );
@@ -65,6 +70,7 @@ function GhostNodeImpl({ data }: NodeProps<FlowNode>) {
     >
       <NodeHandles inert />
       <PlainTitle model={m} placeholder="Без названия" />
+      <KbLinkField slot={TASK_LINK} path={m.kbPath} title={m.title} />
       <TaskFoot status={status} progress={data.progress} />
     </div>
   );

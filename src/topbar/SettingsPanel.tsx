@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
-import { Ban, FolderOpen } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { Ban, Folder, FolderOpen, Home } from "lucide-react";
 
 import { api, type TaskStatus, type VaultInfo } from "../api";
+import { KbPicker } from "../canvas/KbPicker";
 import { StatusIcon, STATUS_META } from "../canvas/NodeParts";
 import { PALETTE } from "../canvas/palette";
 import { useGraph, useStatusColors } from "../store/graph";
+import { useKbLinks } from "../store/kbLinks";
 import { useMode } from "../store/mode";
 
 interface Props {
@@ -34,7 +36,9 @@ export function SettingsPanel({ anchor, onClose }: Props) {
     };
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
-      if (!ref.current?.contains(t) && !anchor.current?.contains(t)) onClose();
+      // Окно выбора папки (портал) — часть панели.
+      const inPicker = t instanceof Element && t.closest(".kbp-backdrop");
+      if (!ref.current?.contains(t) && !anchor.current?.contains(t) && !inPicker) onClose();
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onDown, true);
@@ -150,6 +154,39 @@ function VaultSetting() {
         <span>Изменить папку…</span>
       </button>
       <div className="st-hint">Обычные .md-файлы; можно выбрать существующий vault Obsidian.</div>
+      <DefaultFolderSetting />
+    </div>
+  );
+}
+
+/** Папка для заметок и папок, создаваемых из графа (поле-ссылка, нода-заметка). */
+function DefaultFolderSetting() {
+  const folder = useKbLinks((s) => s.defaultFolder);
+  const setFolder = useKbLinks((s) => s.setDefaultFolder);
+  const [picking, setPicking] = useState(false);
+  const close = useCallback(() => setPicking(false), []);
+  return (
+    <div className="st-folder">
+      <div className="st-subtitle">Новые заметки из графа</div>
+      <button
+        type="button"
+        className="st-btn st-folder-btn"
+        title="Папка, в которой создаются заметки и папки из графа"
+        onClick={() => setPicking(true)}
+      >
+        {folder ? <Folder size={13} /> : <Home size={13} />}
+        <span>{folder || "Корень базы"}</span>
+      </button>
+      {picking && (
+        <KbPicker
+          title="Папка для новых заметок"
+          filter="folders"
+          includeRoot
+          current={folder}
+          onPick={(p) => void setFolder(p)}
+          onClose={close}
+        />
+      )}
     </div>
   );
 }
