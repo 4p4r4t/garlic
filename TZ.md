@@ -194,8 +194,9 @@ garlic/
    └─ topbar/
 ```
 
-**Команды Tauri (черновик):**
-`list_spaces, create_space, rename_space, delete_space, load_canvas(canvas_id) -> {nodes, edges, viewport}, get_or_create_child_canvas(node_id), create_node, update_node(patch), move_nodes([{id,x,y}]), delete_nodes([id]), create_edge, delete_edge, save_viewport, get_app_state, set_app_state`.
+**Команды Tauri (реализованы, `src-tauri/src/commands.rs` ↔ `src/api/index.ts`):**
+`list_spaces, create_space(name), rename_space(id, name), delete_space(id), load_canvas(canvas_id) -> {canvas, nodes, edges}, get_or_create_child_canvas(node_id), save_viewport(canvas_id, viewport), create_node(input), update_node(id, patch), move_nodes([{id,x,y}]), delete_nodes([id]), count_descendants(node_id), create_edge(input), delete_edges([id]), get_app_state(key), set_app_state(key, value)`.
+Отличия от черновика: `delete_edge` → пакетный `delete_edges`; добавлен `count_descendants` (подтверждение удаления задачи с подзадачами). Фронт вызывает команды строго последовательно (`src/api/queue.ts`).
 
 Правила:
 - Бизнес-логика и валидация — в Rust; фронт хранит только кэш текущих холстов.
@@ -211,18 +212,18 @@ garlic/
 ## 9. Этапы
 
 ### M0 — Каркас
-- [ ] Установлен Rust toolchain (stable-msvc), MSVC Build Tools, WebView2
-- [ ] Проект Tauri 2 + React + TS + Vite, `npm run tauri dev` открывает окно
-- [ ] SQLite: подключение, миграция v1 (схема §6), тесты
-- [ ] git-репозиторий, `.gitignore`
+- [x] Установлен Rust toolchain (stable-msvc), MSVC Build Tools, WebView2
+- [x] Проект Tauri 2 + React + TS + Vite, `npm run tauri dev` открывает окно
+- [x] SQLite: подключение, миграция v1 (схема §6), тесты
+- [x] git-репозиторий, `.gitignore`
 
 ### M1 — Холст и ноды
-- [ ] Полноэкранный холст React Flow, пан/зум, точечная сетка
-- [ ] ПКМ по холсту → меню «Задача / Заметка», создание ноды в точке клика
-- [ ] TaskNode / NoteNode, редактирование заголовка
-- [ ] Драг нод, 4 хэндла, создание стрелок драгом от хэндла
-- [ ] Удаление нод и стрелок
-- [ ] Всё сохраняется в SQLite и восстанавливается после перезапуска
+- [x] Полноэкранный холст React Flow, пан/зум, точечная сетка
+- [x] ПКМ по холсту → меню «Задача / Заметка», создание ноды в точке клика
+- [x] TaskNode / NoteNode, редактирование заголовка
+- [x] Драг нод, 4 хэндла, создание стрелок драгом от хэндла
+- [x] Удаление нод и стрелок
+- [x] Всё сохраняется в SQLite и восстанавливается после перезапуска
 
 ### M2 — Контекстное меню ноды
 - [ ] ПКМ по ноде → полоса иконок
@@ -257,3 +258,25 @@ garlic/
 
 ## 11. Журнал
 - 2026-10-11 — Собрано ТЗ v1, приняты решения по стеку (Tauri 2 + React Flow + SQLite) и модели подзадач (вложенный граф).
+- 2026-10-11 — Готовы M0 и M1. Каркас Tauri 2 + React 19 + Vite + @xyflow/react 12 + zustand; SQLite (схема v1 + индексы, уникальный `canvases.owner_node`), repo-слой с валидацией и 12 интеграционными тестами. Холст: точечная сетка, пан/зум, вьюпорт на холст, ПКМ-меню «Задача / Заметка», TaskNode (маркер статуса уже переключается по клику — пункт M2 «Статус задачи» фактически готов) и NoteNode, редактирование заголовка, 4 хэндла (ConnectionMode.Loose; стрелку можно бросить и на тело ноды), Delete, дебаунс-сохранение перемещений. Поведение проверено e2e-прогоном через CDP по живому окну WebView2. Пространство «Основное» создаётся при первом запуске. Задел под M3/M4: кэш холстов по `canvas_id`, стек слоёв `layers` в сторе, команды пространств/вложенных холстов в бэкенде.
+
+## 12. Как запустить
+
+Нужны: Rust stable-msvc (`%USERPROFILE%\.cargo\bin` в PATH), VS Build Tools с C++, Node.js, WebView2 (есть в Windows 11).
+
+```sh
+npm install
+npm run tauri dev        # окно приложения с hot reload фронта
+npm run tauri build      # релизная сборка + установщик
+```
+
+Проверки:
+
+```sh
+npx tsc --noEmit && npm run build
+cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo test
+```
+
+- БД: `%APPDATA%\com.garlic.desktop\garlic.db` (WAL). Переменная `GARLIC_DATA_DIR` подменяет каталог данных (тесты/отладка).
+- Dev-сервер Vite слушает `127.0.0.1:1420` (через `localhost` Tauri на Windows его не находил).
+- Отладка WebView2 по CDP: `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`.
