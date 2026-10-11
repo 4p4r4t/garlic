@@ -10,12 +10,12 @@ name = "garlic_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", features = [] }
 
 [dependencies]
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
-tauri = "2"
+tauri = { version = "2", features = [] }
 thiserror = "2.0.21"
 uuid = { version = "1.28.0", features = ["v7"] }

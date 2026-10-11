@@ -17,7 +17,11 @@ pub const DB_FILE: &str = "garlic.db";
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let dir = app.path().app_data_dir()?;
+            // GARLIC_DATA_DIR — переопределение каталога данных (тесты, отладка).
+            let dir = match std::env::var_os("GARLIC_DATA_DIR") {
+                Some(d) => std::path::PathBuf::from(d),
+                None => app.path().app_data_dir()?,
+            };
             std::fs::create_dir_all(&dir)?;
             let conn = db::open(&dir.join(DB_FILE))?;
             // Первый запуск: пространство по умолчанию с корневым холстом.
