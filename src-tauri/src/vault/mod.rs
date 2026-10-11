@@ -201,9 +201,10 @@ impl Vault {
     }
 
     /// Запись заметки с регистрацией в `SelfWrites` (эхо не уйдёт во фронт).
-    pub fn write(&self, rel: &str, content: &str) -> AppResult<i64> {
+    /// `expected_mtime` — см. [`ops::write_checked`].
+    pub fn write(&self, rel: &str, content: &str, expected_mtime: Option<i64>) -> AppResult<i64> {
         let root = self.root()?;
-        let (abs, mtime) = ops::write(&root, rel, content)?;
+        let (abs, mtime) = ops::write_checked(&root, rel, content, expected_mtime)?;
         self.writes.record(abs, mtime);
         Ok(ops::to_ms(mtime))
     }

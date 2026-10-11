@@ -134,6 +134,18 @@ fn read_write_create_rename_move() {
         .filter(|e| e.file_name().to_string_lossy().contains("garlic~"))
         .collect();
     assert!(leftovers.is_empty());
+    // Запись с ожидаемым mtime: совпал — пишем, файл изменён снаружи — конфликт.
+    let seen = ops::read(root, &p).unwrap().mtime;
+    let (_, t) = ops::write_checked(root, &p, "моя правка", Some(seen)).unwrap();
+    let after = ops::to_ms(t);
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    fs::write(root.join(&p), "чужая правка").unwrap();
+    let err = ops::write_checked(root, &p, "затёрла бы", Some(after)).unwrap_err();
+    assert!(err.to_string().starts_with("conflict:"), "{err}");
+    assert_eq!(ops::read(root, &p).unwrap().content, "чужая правка");
+    // Нового файла ожидание не касается.
+    ops::write_checked(root, "новый.md", "x", Some(1)).unwrap();
+    ops::write(root, &p, "обновлено\n").unwrap();
     assert!(ops::write(root, "нет-папки/x.md", "").is_err());
     assert!(ops::write(root, "x.txt", "").is_err());
 

@@ -11,6 +11,9 @@ pub enum AppError {
     NotFound(String),
     #[error("некорректные данные: {0}")]
     Invalid(String),
+    /// Файл изменён снаружи (строка начинается с `conflict:` — фронт это проверяет).
+    #[error("conflict: {0}")]
+    Conflict(String),
     #[error("{0}")]
     Other(String),
 }

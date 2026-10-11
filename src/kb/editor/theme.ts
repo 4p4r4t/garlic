@@ -176,6 +176,7 @@ export const obsidianTheme = EditorView.theme(
     ".cm-tooltip-autocomplete > ul > li": {
       padding: "5px 10px !important",
       borderRadius: "5px",
+      fontFamily: "var(--kb-font)",
       color: "var(--kb-text)",
     },
     ".cm-tooltip-autocomplete > ul > li[aria-selected]": {

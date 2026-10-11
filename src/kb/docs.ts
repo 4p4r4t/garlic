@@ -13,7 +13,7 @@
 import { EditorSelection, EditorState, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 
-import { api } from "../api";
+import { api, isConflictError } from "../api";
 import { buildExtensions, refreshDecos, type EditorCtx } from "./editor/setup";
 
 const SAVE_DEBOUNCE_MS = 600;
@@ -52,12 +52,15 @@ export type Reveal = { line: number } | { heading: string } | null;
 export class NoteDoc {
   view: EditorView | null = null;
   private saved = "";
+  /** mtime файла, соответствующий `saved` (проверка при записи). */
+  private mtime: number | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private saving: Promise<void> | null = null;
   private meta: DocMeta = { ...EMPTY_META };
   private destroyed = false;
   /** Текст на диске при конфликте. */
   private diskText: string | null = null;
+  private diskMtime: number | null = null;
 
   constructor(
     readonly id: string,
@@ -79,6 +82,7 @@ export class NoteDoc {
       const file = await api.vaultRead(this.path);
       if (this.destroyed) return;
       this.saved = file.content;
+      this.mtime = file.mtime;
       const ctx: EditorCtx = {
         source: () => this.path,
         notes: () => this.hooks.notes(),
@@ -144,11 +148,19 @@ export class NoteDoc {
     const path = this.path;
     this.saving = (async () => {
       try {
-        await api.vaultWrite(path, text);
-        if (path === this.path) this.saved = text;
+        // Пропавший файл создаём заново без проверки mtime.
+        const expected = this.meta.missing ? null : this.mtime;
+        const mtime = await api.vaultWrite(path, text, expected);
+        if (path === this.path) {
+          this.saved = text;
+          this.mtime = mtime;
+        }
         this.setMeta({ dirty: this.text !== this.saved, missing: false, error: null });
       } catch (e) {
-        this.hooks.showError(e);
+        if (isConflictError(e)) {
+          // Файл изменился снаружи, а событие watcher'а ещё не дошло: не затираем.
+          await this.enterConflict();
+        } else this.hooks.showError(e);
       }
     })();
     try {
@@ -167,27 +179,51 @@ export class NoteDoc {
   /** Файл изменился на диске (watcher). */
   async external(): Promise<void> {
     if (!this.view || this.destroyed) return;
-    let content: string;
+    if (this.saving) await this.saving;
+    let file: { content: string; mtime: number };
     try {
-      content = (await api.vaultRead(this.path)).content;
+      file = await api.vaultRead(this.path);
     } catch {
       return; // файл пропал — придёт remove
     }
-    if (!this.view) return;
+    if (!this.view || this.meta.conflict) return;
+    const { content } = file;
     const current = this.text;
     if (content === this.saved || content === current) {
       this.saved = content;
+      this.mtime = file.mtime;
       this.setMeta({ dirty: current !== content, missing: false });
       return;
     }
     if (current === this.saved) {
       this.saved = content;
+      this.mtime = file.mtime;
       this.applyText(content);
       this.setMeta({ dirty: false, missing: false, version: this.meta.version + 1 });
     } else {
       this.diskText = content;
+      this.diskMtime = file.mtime;
       clearTimeout(this.timer);
       this.setMeta({ conflict: true });
+    }
+  }
+
+  /** Запись отклонена (файл изменён снаружи): перечитать диск и показать конфликт. */
+  private async enterConflict(): Promise<void> {
+    try {
+      const file = await api.vaultRead(this.path);
+      if (file.content === this.text) {
+        this.saved = file.content;
+        this.mtime = file.mtime;
+        this.setMeta({ dirty: false });
+        return;
+      }
+      this.diskText = file.content;
+      this.diskMtime = file.mtime;
+      clearTimeout(this.timer);
+      this.setMeta({ conflict: true });
+    } catch (e) {
+      this.hooks.showError(e);
     }
   }
 
@@ -196,11 +232,15 @@ export class NoteDoc {
     const disk = this.diskText;
     this.diskText = null;
     this.setMeta({ conflict: false });
+    const diskMtime = this.diskMtime;
+    this.diskMtime = null;
     if (mine) {
       this.saved = disk ?? this.saved;
+      this.mtime = diskMtime ?? this.mtime;
       await this.save();
     } else if (disk != null) {
       this.saved = disk;
+      this.mtime = diskMtime ?? this.mtime;
       this.applyText(disk);
       this.setMeta({ dirty: false, version: this.meta.version + 1 });
     }

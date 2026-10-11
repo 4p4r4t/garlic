@@ -179,10 +179,28 @@ pub fn write_atomic(abs: &Path, content: &str) -> AppResult<SystemTime> {
 
 /// Записывает заметку (создаёт, если её нет; папка должна существовать).
 pub fn write(root: &Path, rel: &str, content: &str) -> AppResult<(PathBuf, SystemTime)> {
+    write_checked(root, rel, content, None)
+}
+
+/// Запись с проверкой: если файл существует и его mtime (мс) не равен
+/// `expected_mtime` — он изменён снаружи после нашего чтения/записи, и
+/// запись отклоняется [`AppError::Conflict`] (фронт показывает конфликт,
+/// вместо того чтобы молча затереть чужую правку).
+pub fn write_checked(
+    root: &Path,
+    rel: &str,
+    content: &str,
+    expected_mtime: Option<i64>,
+) -> AppResult<(PathBuf, SystemTime)> {
     ensure_note_path(rel)?;
     let abs = paths::resolve(root, rel)?;
     if abs.is_dir() {
         return Err(AppError::Invalid(format!("это папка: {rel}")));
+    }
+    if let Some(expected) = expected_mtime {
+        if abs.is_file() && mtime_ms(&abs) != expected {
+            return Err(AppError::Conflict(format!("«{rel}» изменён снаружи")));
+        }
     }
     let t = write_atomic(&abs, content)?;
     Ok((abs, t))

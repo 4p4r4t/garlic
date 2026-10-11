@@ -101,9 +101,12 @@ export const api = {
   vaultSetPath: (path: string) => invokeVault<VaultInfo>("vault_set_path", { path }),
   vaultTree: () => rawInvoke<VaultEntry[]>("vault_tree"),
   vaultRead: (path: string) => rawInvoke<NoteFile>("vault_read", { path }),
-  /** Атомарная запись; → новый mtime. Эхо этой записи watcher во фронт не шлёт. */
-  vaultWrite: (path: string, content: string) =>
-    invokeVault<number>("vault_write", { path, content }),
+  /**
+   * Атомарная запись; → новый mtime. Эхо этой записи watcher во фронт не шлёт.
+   * `expectedMtime` — последний известный mtime: файл изменён снаружи → ошибка `conflict: …`.
+   */
+  vaultWrite: (path: string, content: string, expectedMtime?: number | null) =>
+    invokeVault<number>("vault_write", { path, content, expectedMtime: expectedMtime ?? null }),
   /** Новая заметка в `dir` (имя очищается, ` 2`/` 3` при занятом) → её путь. */
   vaultCreateNote: (dir: string, name: string, content?: string) =>
     invokeVault<string>("vault_create_note", { dir, name, content: content ?? null }),
@@ -124,6 +127,9 @@ export const api = {
   /** Ноды всех пространств с kb_path == path. */
   kbLinkedNodes: (path: string) => invoke<LinkedNode[]>("kb_linked_nodes", { path }),
 };
+
+/** Ошибка записи из-за изменения файла снаружи (`AppError::Conflict`). */
+export const isConflictError = (e: unknown) => errorMessage(e).startsWith("conflict:");
 
 /** Текст ошибки из команды (AppError сериализуется строкой). */
 export function errorMessage(e: unknown): string {

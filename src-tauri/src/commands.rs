@@ -207,10 +207,17 @@ pub async fn vault_read(vault: V<'_>, path: String) -> AppResult<NoteFile> {
     ops::read(&vault.root()?, &path)
 }
 
-/// Атомарная запись заметки; возвращает новый mtime (мс).
+/// Атомарная запись заметки; возвращает новый mtime (мс). `expected_mtime` —
+/// mtime, который фронт видел последним: файл изменён снаружи → ошибка
+/// `conflict: …` без записи.
 #[tauri::command]
-pub async fn vault_write(vault: V<'_>, path: String, content: String) -> AppResult<i64> {
-    vault.write(&path, &content)
+pub async fn vault_write(
+    vault: V<'_>,
+    path: String,
+    content: String,
+    expected_mtime: Option<i64>,
+) -> AppResult<i64> {
+    vault.write(&path, &content, expected_mtime)
 }
 
 /// Новая заметка в папке `dir` (имя очищается, ` 2`/` 3` при занятом). → путь.
