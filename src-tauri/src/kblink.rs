@@ -3,10 +3,11 @@
 //! (файл при создании, заголовок = имя файла), проверка ссылок и превью,
 //! миграция старых заметок в `.md`.
 //!
-//! Операции поля-ссылки не привязаны к колонке `nodes.kb_path`: они работают
-//! с путём и возвращают новый путь, а куда его записать, решает вызывающий
-//! (сейчас — `update_node(kbPath)`; в M5.3 у задачи будет ещё и «Результат»).
-//! Ноды, привязанные к перемещённым путям, переписывает `repo::kb::rewrite_prefix`.
+//! Операции поля-ссылки не привязаны к колонке: они работают с путём и
+//! возвращают новый путь, а куда его записать, решает вызывающий
+//! (`update_node(kbPath | kbResultPath)` — «Комментарий» / «Результат» задачи,
+//! ТЗ §4.11). Ссылки всех ролей на перемещённые пути переписывает
+//! `repo::kb::rewrite_prefix`.
 
 use std::path::Path;
 
@@ -14,7 +15,7 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
-use crate::model::{NewNode, Node, NodeKind, NodePatch};
+use crate::model::{LinkRole, NewNode, Node, NodeKind, NodePatch};
 use crate::repo::{self, kb::note_stem};
 use crate::vault::{self, names, ops, paths, preview};
 
@@ -43,11 +44,32 @@ pub struct KbStat {
     pub preview: Option<String>,
 }
 
+/// Ключ app_state: папка для новых «Комментариев» задач (ТЗ §4.11).
+pub const DEFAULT_COMMENT_FOLDER_KEY: &str = "kb.default_comment_folder";
+/// Ключ app_state: папка для новых «Результатов» задач (ТЗ §4.11).
+pub const DEFAULT_RESULT_FOLDER_KEY: &str = "kb.default_result_folder";
+/// Папка комментариев, пока не задана в настройках.
+pub const DEFAULT_COMMENT_FOLDER: &str = "Задачи";
+/// Папка результатов, пока не задана в настройках.
+pub const DEFAULT_RESULT_FOLDER: &str = "Результаты";
+
 /// Папка для новых заметок/папок из графа (`kb.default_folder`, `""` — корень).
 pub fn default_folder(conn: &Connection) -> AppResult<String> {
-    match repo::app_state::get(conn, vault::DEFAULT_FOLDER_KEY)? {
+    default_folder_for(conn, LinkRole::Note)
+}
+
+/// Папка по умолчанию для роли ссылки: нода-заметка — `kb.default_folder`
+/// (корень), комментарий — `kb.default_comment_folder` («Задачи»), результат —
+/// `kb.default_result_folder` («Результаты»). Создаётся при первом использовании.
+pub fn default_folder_for(conn: &Connection, role: LinkRole) -> AppResult<String> {
+    let (key, fallback) = match role {
+        LinkRole::Note => (vault::DEFAULT_FOLDER_KEY, ""),
+        LinkRole::Comment => (DEFAULT_COMMENT_FOLDER_KEY, DEFAULT_COMMENT_FOLDER),
+        LinkRole::Result => (DEFAULT_RESULT_FOLDER_KEY, DEFAULT_RESULT_FOLDER),
+    };
+    match repo::app_state::get(conn, key)? {
         Some(p) => paths::normalize_rel(&p),
-        None => Ok(String::new()),
+        None => Ok(fallback.to_owned()),
     }
 }
 

@@ -23,6 +23,17 @@ pub enum TaskStatus {
     Done,
 }
 
+/// Роль ссылки ноды на базу знаний (ТЗ §4.11): у ноды-заметки — её `.md`
+/// (`note`), у задачи — «Комментарий» (`comment`, колонка `kb_path`) или
+/// «Результат» (`result`, колонка `kb_result_path`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkRole {
+    Note,
+    Comment,
+    Result,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum HandleSide {
@@ -60,6 +71,7 @@ macro_rules! str_enum {
 
 str_enum!(NodeKind { Task => "task", Note => "note" });
 str_enum!(TaskStatus { Todo => "todo", InProgress => "in_progress", Done => "done" });
+str_enum!(LinkRole { Note => "note", Comment => "comment", Result => "result" });
 str_enum!(HandleSide { Top => "top", Right => "right", Bottom => "bottom", Left => "left" });
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -116,7 +128,10 @@ pub struct Node {
     pub width: Option<f64>,
     pub height: Option<f64>,
     /// Ссылка на заметку/папку базы знаний (путь относительно vault, `/`), ТЗ §4.10.
+    /// У задачи — «Комментарий» (ТЗ §4.11), у заметки — её собственный `.md`.
     pub kb_path: Option<String>,
+    /// «Результат» задачи (ТЗ §4.11); у заметок всегда `None`.
+    pub kb_result_path: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -200,6 +215,9 @@ pub struct NodePatch {
     /// Путь в vault (`a/b.md` или папка `a/b`); `null` — отвязать.
     #[serde(default, deserialize_with = "double_option")]
     pub kb_path: Option<Option<String>>,
+    /// «Результат» задачи (ТЗ §4.11); `null` — отвязать. У заметки — ошибка.
+    #[serde(default, deserialize_with = "double_option")]
+    pub kb_result_path: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -261,5 +279,27 @@ pub struct LinkedNode {
     pub space_name: String,
     /// Цепочка холстов от корневого холста пространства до холста ноды
     /// (готовый аргумент для `revealNode` на фронте).
+    pub canvas_chain: Vec<String>,
+    /// Роль ссылки. Задача, у которой путь — и комментарий, и результат,
+    /// приходит двумя записями.
+    pub role: LinkRole,
+}
+
+/// «Результат» задачи для фильтра проводника (`kb_result_links`, ТЗ §4.11).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResultLink {
+    /// Путь результата в vault (заметка или папка).
+    pub path: String,
+    /// Задача-владелец ссылки.
+    pub id: String,
+    pub title: String,
+    pub status: TaskStatus,
+    pub space_id: String,
+    pub space_name: String,
+    /// Заголовки задач-предков от корня пространства (без самой задачи):
+    /// тултип `Пространство › Задача A › Подзадача B`.
+    pub parents: Vec<String>,
+    /// Цепочка холстов от корневого до холста задачи (для `revealNode`).
     pub canvas_chain: Vec<String>,
 }

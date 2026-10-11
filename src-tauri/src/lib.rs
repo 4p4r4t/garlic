@@ -81,6 +81,7 @@ pub fn run() {
             commands::vault_backlinks,
             commands::vault_abs_path,
             commands::kb_linked_nodes,
+            commands::kb_result_links,
             commands::kb_create_target,
             commands::kb_note_to_folder,
             commands::kb_stat,

@@ -64,4 +64,12 @@ CREATE INDEX idx_edges_target ON edges(target);
 ALTER TABLE nodes ADD COLUMN kb_path TEXT;
 CREATE INDEX idx_nodes_kb_path ON nodes(kb_path);
 "#,
+    // v3 — «Комментарий» и «Результат» у задачи (ТЗ §4.11, §6 v1.4): у задачи
+    // `kb_path` — комментарий, `kb_result_path` — результат (только у задач,
+    // проверяет repo). Ссылки задач из v2 остаются в `kb_path` и становятся
+    // комментарием без переноса данных.
+    r#"
+ALTER TABLE nodes ADD COLUMN kb_result_path TEXT;
+CREATE INDEX idx_nodes_kb_result_path ON nodes(kb_result_path);
+"#,
 ];

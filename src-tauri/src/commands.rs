@@ -160,7 +160,7 @@ use crate::vault::{self, ops, Backlink, NoteFile, SearchHit, Vault, VaultEntry, 
 type V<'a> = State<'a, Vault>;
 
 /// Обработчик пачки событий watcher'а: переименования снаружи переписывают
-/// `nodes.kb_path`, затем пачка уходит во фронт событием `vault:changed`.
+/// ссылки нод (`kb_path` и `kb_result_path`), затем пачка уходит во фронт событием `vault:changed`.
 pub fn vault_events_handler(app: tauri::AppHandle) -> impl Fn(Vec<vault::VaultEvent>) + Send {
     use tauri::{Emitter, Manager};
     move |events| {
@@ -316,12 +316,20 @@ pub async fn kb_linked_nodes(
     repo::kb::linked_nodes(&*db.conn()?, &vault::paths::normalize_rel(&path)?)
 }
 
+/// Все «Результаты» задач (фильтр проводника «Показывать только результаты», ТЗ §4.11).
+#[tauri::command]
+pub async fn kb_result_links(db: Cmd<'_>) -> AppResult<Vec<crate::model::ResultLink>> {
+    repo::kb::result_links(&*db.conn()?)
+}
+
 // ---- ссылки нод на базу знаний (ТЗ §4.10, M5.2) ----
-// Операции поля-ссылки работают с путём; куда записать результат (сейчас —
-// `update_node(kbPath)`), решает фронт.
+// Операции поля-ссылки работают с путём; куда записать результат
+// (`update_node(kbPath | kbResultPath)`), решает фронт.
 
 /// Новая заметка/папка для поля-ссылки: в `dir` (не указана — папка по
-/// умолчанию `kb.default_folder`; создаётся при отсутствии), имя `name`. → путь.
+/// умолчанию для роли `role`: заметка — `kb.default_folder`, комментарий —
+/// `kb.default_comment_folder`, результат — `kb.default_result_folder`;
+/// создаётся при отсутствии), имя `name`. → путь.
 #[tauri::command]
 pub async fn kb_create_target(
     db: Cmd<'_>,
@@ -329,10 +337,14 @@ pub async fn kb_create_target(
     kind: crate::kblink::LinkTarget,
     dir: Option<String>,
     name: String,
+    role: Option<crate::model::LinkRole>,
 ) -> AppResult<String> {
     let dir = match dir {
         Some(d) => d,
-        None => crate::kblink::default_folder(&*db.conn()?)?,
+        None => crate::kblink::default_folder_for(
+            &*db.conn()?,
+            role.unwrap_or(crate::model::LinkRole::Note),
+        )?,
     };
     crate::kblink::create_target(&vault.root()?, &dir, kind, &name)
 }

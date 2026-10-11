@@ -9,7 +9,8 @@ pub const PALETTE: &[&str] = &[
     "red", "orange", "yellow", "green", "teal", "blue", "violet", "gray",
 ];
 
-const COLS: &str = "id, canvas_id, kind, title, body, status, color, x, y, width, height,                     created_at, updated_at, kb_path";
+const COLS: &str = "id, canvas_id, kind, title, body, status, color, x, y, width, height,
+                    created_at, updated_at, kb_path, kb_result_path";
 
 fn from_row(r: &Row<'_>) -> rusqlite::Result<Node> {
     Ok(Node {
@@ -28,6 +29,7 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<Node> {
         width: r.get(9)?,
         height: r.get(10)?,
         kb_path: r.get(13)?,
+        kb_result_path: r.get(14)?,
         created_at: r.get(11)?,
         updated_at: r.get(12)?,
     })
@@ -135,10 +137,23 @@ pub fn update(conn: &Connection, id: &str, patch: &NodePatch) -> AppResult<Node>
         };
     }
 
+    if let Some(kb) = &patch.kb_result_path {
+        node.kb_result_path = match (node.kind, kb) {
+            (NodeKind::Task, Some(p)) => Some(crate::vault::paths::normalize_rel(p)?),
+            (NodeKind::Note, Some(_)) => {
+                return Err(AppError::Invalid(
+                    "«Результат» бывает только у задачи".into(),
+                ))
+            }
+            (_, None) => None,
+        };
+    }
+
     node.updated_at = now_ms();
     tx.execute(
         "UPDATE nodes SET title = ?2, body = ?3, status = ?4, color = ?5,
-                          width = ?6, height = ?7, updated_at = ?8, kb_path = ?9
+                          width = ?6, height = ?7, updated_at = ?8, kb_path = ?9,
+                          kb_result_path = ?10
          WHERE id = ?1",
         params![
             id,
@@ -149,7 +164,8 @@ pub fn update(conn: &Connection, id: &str, patch: &NodePatch) -> AppResult<Node>
             node.width,
             node.height,
             node.updated_at,
-            node.kb_path
+            node.kb_path,
+            node.kb_result_path
         ],
     )?;
     tx.commit()?;
