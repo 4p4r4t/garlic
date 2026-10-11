@@ -5,6 +5,7 @@ pub mod db;
 pub mod error;
 pub mod model;
 pub mod repo;
+pub mod vault;
 
 use std::sync::Mutex;
 
@@ -16,6 +17,8 @@ pub const DB_FILE: &str = "garlic.db";
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // GARLIC_DATA_DIR — переопределение каталога данных (тесты, отладка).
             let dir = match std::env::var_os("GARLIC_DATA_DIR") {
@@ -26,7 +29,18 @@ pub fn run() {
             let conn = db::open(&dir.join(DB_FILE))?;
             // Первый запуск: пространство по умолчанию с корневым холстом.
             repo::spaces::ensure_default(&conn)?;
+            // База знаний: путь из app_state, иначе «Документы/Garlic Vault».
+            let vault_root = match repo::app_state::get(&conn, vault::VAULT_PATH_KEY)? {
+                Some(p) if !p.trim().is_empty() => std::path::PathBuf::from(p.trim()),
+                _ => vault::default_root(&app.path().document_dir()?),
+            };
             app.manage(commands::Db(Mutex::new(conn)));
+            let vault = vault::Vault::new(vault_root.clone());
+            if let Err(e) = std::fs::create_dir_all(&vault_root) {
+                eprintln!("[garlic] vault {}: {e}", vault_root.display());
+            }
+            vault.restart_watcher(commands::vault_events_handler(app.handle().clone()));
+            app.manage(vault);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -49,6 +63,20 @@ pub fn run() {
             commands::get_app_state,
             commands::set_app_state,
             commands::list_space_tasks,
+            commands::vault_info,
+            commands::vault_set_path,
+            commands::vault_tree,
+            commands::vault_read,
+            commands::vault_write,
+            commands::vault_create_note,
+            commands::vault_create_folder,
+            commands::vault_rename,
+            commands::vault_move,
+            commands::vault_delete,
+            commands::vault_search,
+            commands::vault_backlinks,
+            commands::vault_abs_path,
+            commands::kb_linked_nodes,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска приложения Garlic");

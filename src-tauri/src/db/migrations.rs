@@ -58,4 +58,10 @@ CREATE INDEX idx_edges_canvas ON edges(canvas_id);
 CREATE INDEX idx_edges_source ON edges(source);
 CREATE INDEX idx_edges_target ON edges(target);
 "#,
+    // v2 — база знаний (ТЗ §4.10, §6 v1.3): ссылка ноды на файл/папку vault.
+    // Путь относительно корня vault, разделитель `/`; заметка — с `.md`, папка — без.
+    r#"
+ALTER TABLE nodes ADD COLUMN kb_path TEXT;
+CREATE INDEX idx_nodes_kb_path ON nodes(kb_path);
+"#,
 ];

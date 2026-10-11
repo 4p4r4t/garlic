@@ -3,5 +3,9 @@
   "identifier": "default",
   "description": "Права главного окна",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "opener:default"
+  ]
 }

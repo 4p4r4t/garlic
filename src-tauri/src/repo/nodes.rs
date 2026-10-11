@@ -9,8 +9,7 @@ pub const PALETTE: &[&str] = &[
     "red", "orange", "yellow", "green", "teal", "blue", "violet", "gray",
 ];
 
-const COLS: &str =
-    "id, canvas_id, kind, title, body, status, color, x, y, width, height, created_at, updated_at";
+const COLS: &str = "id, canvas_id, kind, title, body, status, color, x, y, width, height,                     created_at, updated_at, kb_path";
 
 fn from_row(r: &Row<'_>) -> rusqlite::Result<Node> {
     Ok(Node {
@@ -28,6 +27,7 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<Node> {
         y: r.get(8)?,
         width: r.get(9)?,
         height: r.get(10)?,
+        kb_path: r.get(13)?,
         created_at: r.get(11)?,
         updated_at: r.get(12)?,
     })
@@ -128,10 +128,17 @@ pub fn update(conn: &Connection, id: &str, patch: &NodePatch) -> AppResult<Node>
         }
     }
 
+    if let Some(kb) = &patch.kb_path {
+        node.kb_path = match kb {
+            Some(p) => Some(crate::vault::paths::normalize_rel(p)?),
+            None => None,
+        };
+    }
+
     node.updated_at = now_ms();
     tx.execute(
         "UPDATE nodes SET title = ?2, body = ?3, status = ?4, color = ?5,
-                          width = ?6, height = ?7, updated_at = ?8
+                          width = ?6, height = ?7, updated_at = ?8, kb_path = ?9
          WHERE id = ?1",
         params![
             id,
@@ -141,7 +148,8 @@ pub fn update(conn: &Connection, id: &str, patch: &NodePatch) -> AppResult<Node>
             node.color,
             node.width,
             node.height,
-            node.updated_at
+            node.updated_at,
+            node.kb_path
         ],
     )?;
     tx.commit()?;

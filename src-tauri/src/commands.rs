@@ -143,3 +143,159 @@ pub async fn list_space_tasks(
 ) -> AppResult<Vec<crate::model::SpaceTask>> {
     repo::tasks::list_space_tasks(&*db.conn()?, &space_id)
 }
+
+// ---- база знаний (ТЗ §4.10) ----
+
+use crate::vault::{self, ops, Backlink, NoteFile, SearchHit, Vault, VaultEntry, VaultInfo};
+
+type V<'a> = State<'a, Vault>;
+
+/// Обработчик пачки событий watcher'а: переименования снаружи переписывают
+/// `nodes.kb_path`, затем пачка уходит во фронт событием `vault:changed`.
+pub fn vault_events_handler(app: tauri::AppHandle) -> impl Fn(Vec<vault::VaultEvent>) + Send {
+    use tauri::{Emitter, Manager};
+    move |events| {
+        if let Some(db) = app.try_state::<Db>() {
+            if let Ok(conn) = db.conn() {
+                for e in &events {
+                    if let (vault::VaultEventKind::Rename, Some(from)) = (e.kind, &e.from) {
+                        if let Err(err) = repo::kb::rewrite_prefix(&conn, from, &e.path) {
+                            eprintln!("[garlic] kb_path rewrite: {err}");
+                        }
+                    }
+                }
+            }
+        }
+        let _ = app.emit(VAULT_EVENT, events);
+    }
+}
+
+/// Имя Tauri-события с пачкой `VaultEvent`.
+pub const VAULT_EVENT: &str = "vault:changed";
+
+#[tauri::command]
+pub async fn vault_info(vault: V<'_>) -> AppResult<VaultInfo> {
+    Ok(vault.info())
+}
+
+/// Сменить папку vault (создаётся при отсутствии), запомнить в app_state,
+/// перезапустить слежение. Ссылки нод не трогаются (станут «не найдено»).
+#[tauri::command]
+pub async fn vault_set_path(
+    app: tauri::AppHandle,
+    db: Cmd<'_>,
+    vault: V<'_>,
+    path: String,
+) -> AppResult<VaultInfo> {
+    let root = std::path::PathBuf::from(path.trim());
+    vault.set_root(root.clone(), vault_events_handler(app))?;
+    repo::app_state::set(
+        &*db.conn()?,
+        vault::VAULT_PATH_KEY,
+        &root.display().to_string(),
+    )?;
+    Ok(vault.info())
+}
+
+#[tauri::command]
+pub async fn vault_tree(vault: V<'_>) -> AppResult<Vec<VaultEntry>> {
+    ops::tree(&vault.root()?)
+}
+
+#[tauri::command]
+pub async fn vault_read(vault: V<'_>, path: String) -> AppResult<NoteFile> {
+    ops::read(&vault.root()?, &path)
+}
+
+/// Атомарная запись заметки; возвращает новый mtime (мс).
+#[tauri::command]
+pub async fn vault_write(vault: V<'_>, path: String, content: String) -> AppResult<i64> {
+    vault.write(&path, &content)
+}
+
+/// Новая заметка в папке `dir` (имя очищается, ` 2`/` 3` при занятом). → путь.
+#[tauri::command]
+pub async fn vault_create_note(
+    vault: V<'_>,
+    dir: String,
+    name: String,
+    content: Option<String>,
+) -> AppResult<String> {
+    ops::create_note(
+        &vault.root()?,
+        &dir,
+        &name,
+        content.as_deref().unwrap_or(""),
+    )
+}
+
+#[tauri::command]
+pub async fn vault_create_folder(vault: V<'_>, dir: String, name: String) -> AppResult<String> {
+    ops::create_folder(&vault.root()?, &dir, &name)
+}
+
+/// Переименование на месте (`new_name` у заметки — без `.md`). Ссылки нод
+/// (`kb_path`) на сам путь и всё внутри папки переписываются. → новый путь.
+#[tauri::command]
+pub async fn vault_rename(
+    db: Cmd<'_>,
+    vault: V<'_>,
+    path: String,
+    new_name: String,
+) -> AppResult<String> {
+    let old = vault::paths::normalize_rel(&path)?;
+    let new = ops::rename(&vault.root()?, &old, &new_name)?;
+    repo::kb::rewrite_prefix(&*db.conn()?, &old, &new)?;
+    Ok(new)
+}
+
+/// Перемещение в папку `new_dir` (`""` — корень). Ссылки нод переписываются. → новый путь.
+#[tauri::command]
+pub async fn vault_move(
+    db: Cmd<'_>,
+    vault: V<'_>,
+    path: String,
+    new_dir: String,
+) -> AppResult<String> {
+    let old = vault::paths::normalize_rel(&path)?;
+    let new = ops::move_to(&vault.root()?, &old, &new_dir)?;
+    repo::kb::rewrite_prefix(&*db.conn()?, &old, &new)?;
+    Ok(new)
+}
+
+/// Удаление в корзину ОС. Ссылки нод остаются (станут «не найдено»).
+#[tauri::command]
+pub async fn vault_delete(vault: V<'_>, path: String) -> AppResult<()> {
+    ops::delete(&vault.root()?, &path)
+}
+
+#[tauri::command]
+pub async fn vault_search(
+    vault: V<'_>,
+    query: String,
+    limit: Option<u32>,
+) -> AppResult<Vec<SearchHit>> {
+    ops::search(&vault.root()?, &query, limit.unwrap_or(200) as usize)
+}
+
+#[tauri::command]
+pub async fn vault_backlinks(vault: V<'_>, path: String) -> AppResult<Vec<Backlink>> {
+    ops::backlinks(&vault.root()?, &path)
+}
+
+/// Абсолютный путь (для «Показать в проводнике»).
+#[tauri::command]
+pub async fn vault_abs_path(vault: V<'_>, path: String) -> AppResult<String> {
+    Ok(vault::paths::resolve(&vault.root()?, &path)?
+        .display()
+        .to_string())
+}
+
+/// Ноды всех пространств, привязанные к заметке/папке `path`.
+#[tauri::command]
+pub async fn kb_linked_nodes(
+    db: Cmd<'_>,
+    path: String,
+) -> AppResult<Vec<crate::model::LinkedNode>> {
+    repo::kb::linked_nodes(&*db.conn()?, &vault::paths::normalize_rel(&path)?)
+}

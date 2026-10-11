@@ -5,6 +5,8 @@ use serde::{Serialize, Serializer};
 pub enum AppError {
     #[error("ошибка базы данных: {0}")]
     Db(#[from] rusqlite::Error),
+    #[error("ошибка файловой системы: {0}")]
+    Io(#[from] std::io::Error),
     #[error("не найдено: {0}")]
     NotFound(String),
     #[error("некорректные данные: {0}")]

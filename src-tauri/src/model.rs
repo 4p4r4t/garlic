@@ -115,6 +115,8 @@ pub struct Node {
     pub y: f64,
     pub width: Option<f64>,
     pub height: Option<f64>,
+    /// Ссылка на заметку/папку базы знаний (путь относительно vault, `/`), ТЗ §4.10.
+    pub kb_path: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -195,6 +197,9 @@ pub struct NodePatch {
     pub width: Option<Option<f64>>,
     #[serde(default, deserialize_with = "double_option")]
     pub height: Option<Option<f64>>,
+    /// Путь в vault (`a/b.md` или папка `a/b`); `null` — отвязать.
+    #[serde(default, deserialize_with = "double_option")]
+    pub kb_path: Option<Option<String>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -242,4 +247,19 @@ pub struct SpaceTask {
     pub x: f64,
     pub y: f64,
     pub created_at: i64,
+}
+
+/// Нода, привязанная к файлу/папке базы знаний (`kb_linked_nodes`, правая панель «Ноды графа»).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkedNode {
+    pub id: String,
+    pub title: String,
+    pub kind: NodeKind,
+    pub status: Option<TaskStatus>,
+    pub space_id: String,
+    pub space_name: String,
+    /// Цепочка холстов от корневого холста пространства до холста ноды
+    /// (готовый аргумент для `revealNode` на фронте).
+    pub canvas_chain: Vec<String>,
 }
