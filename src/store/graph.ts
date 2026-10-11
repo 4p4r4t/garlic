@@ -76,7 +76,17 @@ interface GraphState {
   connect: (canvasId: string, ends: EdgeEnds) => Promise<void>;
   /** Сохраняет удаление (локально элементы уже убраны через on*Change). */
   persistDelete: (canvasId: string, nodeIds: string[], edgeIds: string[]) => Promise<void>;
+  /** Вьюпорт один на пространство (ТЗ §1/§6): пишется в корневой холст пространства canvasId. */
   queueViewport: (canvasId: string, viewport: Viewport) => void;
+
+  // --- пространства (M4) ---
+  /** Переключиться: сброс стека слоёв, загрузка корневого холста, запоминание в app_state. */
+  switchSpace: (spaceId: string) => Promise<void>;
+  /** Создать и сразу переключиться. Возвращает false при ошибке. */
+  createSpace: (name: string) => Promise<boolean>;
+  renameSpace: (spaceId: string, name: string) => Promise<boolean>;
+  /** Удалить (последнее нельзя). Текущее — сначала переключаемся на соседнее. */
+  deleteSpace: (spaceId: string) => Promise<void>;
 
   startEditing: (nodeId: string) => void;
   stopEditing: () => void;
@@ -100,6 +110,8 @@ const pendingViewports = new Map<string, Viewport>();
 const viewportTimers = new Map<string, ReturnType<typeof setTimeout>>();
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 let initPromise: Promise<void> | null = null;
+/** Номер последнего переключения пространства — поздние ответы старых переключений игнорируются. */
+let switchSeq = 0;
 
 export const useGraph = create<GraphState>()((set, get) => {
   /** Применяет fn к холсту из кэша (если он загружен). */
@@ -138,18 +150,29 @@ export const useGraph = create<GraphState>()((set, get) => {
     api.saveViewport(canvasId, vp).catch((e) => get().showError(e));
   };
 
+  /** Отправить все отложенные записи сразу (очередь команд последовательна — они уйдут раньше следующих). */
+  const flushAll = () => {
+    [...moveTimers.keys()].forEach((id) => {
+      clearTimeout(moveTimers.get(id));
+      flushMoves(id);
+    });
+    [...viewportTimers.keys()].forEach((id) => {
+      clearTimeout(viewportTimers.get(id));
+      flushViewport(id);
+    });
+  };
+
+  /** Корневой холст пространства, которому принадлежит canvasId (для вьюпорта). */
+  const rootCanvasOf = (canvasId: string): string => {
+    const s = get();
+    const spaceId = s.canvases[canvasId]?.canvas.spaceId;
+    const space = s.spaces.find((sp) => sp.id === spaceId);
+    return space?.rootCanvas ?? canvasId;
+  };
+
   // Лучшее, что можно сделать при закрытии окна: отправить отложенное сразу.
   if (typeof window !== "undefined") {
-    window.addEventListener("pagehide", () => {
-      [...moveTimers.keys()].forEach((id) => {
-        clearTimeout(moveTimers.get(id));
-        flushMoves(id);
-      });
-      [...viewportTimers.keys()].forEach((id) => {
-        clearTimeout(viewportTimers.get(id));
-        flushViewport(id);
-      });
-    });
+    window.addEventListener("pagehide", flushAll);
   }
 
   return {
@@ -270,13 +293,88 @@ export const useGraph = create<GraphState>()((set, get) => {
       }
     },
 
-    queueViewport: (canvasId, viewport) => {
+    queueViewport: (layerCanvasId, viewport) => {
+      const canvasId = rootCanvasOf(layerCanvasId);
       pendingViewports.set(canvasId, viewport);
       clearTimeout(viewportTimers.get(canvasId));
       viewportTimers.set(
         canvasId,
         setTimeout(() => flushViewport(canvasId), VIEWPORT_DEBOUNCE_MS),
       );
+    },
+
+    switchSpace: async (spaceId) => {
+      const space = get().spaces.find((sp) => sp.id === spaceId);
+      if (!space) return;
+      const seq = ++switchSeq;
+      // Отложенные перемещения/вьюпорт текущего пространства — в БД до загрузки нового.
+      flushAll();
+      try {
+        const data = await api.loadCanvas(space.rootCanvas);
+        if (seq !== switchSeq) return;
+        // Кэш холстов сбрасываем целиком: всё отложенное уже ушло в очередь записи.
+        set({
+          activeSpaceId: space.id,
+          layers: [space.rootCanvas],
+          canvases: { [space.rootCanvas]: toView(data) },
+          editingNodeId: null,
+        });
+        await api.setAppState(APP_STATE.activeSpace, space.id);
+      } catch (e) {
+        get().showError(e);
+      }
+    },
+
+    createSpace: async (name) => {
+      try {
+        const space = await api.createSpace(name);
+        set((s) => ({ spaces: [...s.spaces, space] }));
+        await get().switchSpace(space.id);
+        return true;
+      } catch (e) {
+        get().showError(e);
+        return false;
+      }
+    },
+
+    renameSpace: async (spaceId, name) => {
+      try {
+        const fresh = await api.renameSpace(spaceId, name);
+        set((s) => ({ spaces: s.spaces.map((sp) => (sp.id === fresh.id ? fresh : sp)) }));
+        return true;
+      } catch (e) {
+        get().showError(e);
+        return false;
+      }
+    },
+
+    deleteSpace: async (spaceId) => {
+      const { spaces, activeSpaceId } = get();
+      const idx = spaces.findIndex((sp) => sp.id === spaceId);
+      if (idx < 0) return;
+      if (spaces.length <= 1) {
+        get().showError("нельзя удалить последнее пространство");
+        return;
+      }
+      if (spaceId === activeSpaceId) {
+        // Соседнее: следующее по списку, а у последнего — предыдущее.
+        const other = spaces[idx + 1] ?? spaces[idx - 1];
+        await get().switchSpace(other.id);
+        if (get().activeSpaceId === spaceId) return; // переключиться не удалось
+      } else {
+        flushAll();
+      }
+      try {
+        await api.deleteSpace(spaceId);
+        set((s) => ({
+          spaces: s.spaces.filter((sp) => sp.id !== spaceId),
+          canvases: Object.fromEntries(
+            Object.entries(s.canvases).filter(([, v]) => v.canvas.spaceId !== spaceId),
+          ),
+        }));
+      } catch (e) {
+        get().showError(e);
+      }
     },
 
     startEditing: (nodeId) => set({ editingNodeId: nodeId }),
