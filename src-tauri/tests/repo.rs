@@ -400,3 +400,61 @@ fn viewport_and_app_state() {
         Some("y")
     );
 }
+
+/// Правила, на которые опирается панель пространств (M4).
+#[test]
+fn spaces_panel_rules() {
+    let (conn, main_root) = setup();
+    let main = spaces::list(&conn).unwrap().remove(0);
+    let b = spaces::create(&conn, "B").unwrap();
+    let c = spaces::create(&conn, "C").unwrap();
+    // Порядок списка — порядок создания.
+    let names: Vec<_> = spaces::list(&conn)
+        .unwrap()
+        .into_iter()
+        .map(|s| s.name)
+        .collect();
+    assert_eq!(names, [main.name.as_str(), "B", "C"]);
+
+    // Неизвестный id — NotFound, пустое имя при переименовании — Invalid.
+    assert!(matches!(
+        spaces::rename(&conn, "nope", "x"),
+        Err(AppError::NotFound(_))
+    ));
+    assert!(matches!(
+        spaces::delete(&conn, "nope"),
+        Err(AppError::NotFound(_))
+    ));
+    assert!(matches!(
+        spaces::rename(&conn, &b.id, "  "),
+        Err(AppError::Invalid(_))
+    ));
+
+    // Вьюпорт пространства живёт в корневом холсте и не зависит от других пространств.
+    let vp = Viewport {
+        x: 12.0,
+        y: -40.0,
+        zoom: 1.5,
+    };
+    canvases::save_viewport(&conn, &b.root_canvas, vp).unwrap();
+    assert_eq!(canvases::get(&conn, &b.root_canvas).unwrap().viewport, vp);
+    assert_eq!(
+        canvases::get(&conn, &main_root).unwrap().viewport,
+        Viewport::default()
+    );
+
+    // Удаление одного пространства не трогает данные других.
+    node(&conn, &main_root, NodeKind::Task, "keep");
+    node(&conn, &c.root_canvas, NodeKind::Note, "drop");
+    spaces::delete(&conn, &c.id).unwrap();
+    assert_eq!(count(&conn, "nodes"), 1);
+    assert_eq!(count(&conn, "canvases"), 2);
+    assert!(spaces::find(&conn, &c.id).unwrap().is_none());
+
+    // Последнее пространство остаётся всегда.
+    spaces::delete(&conn, &b.id).unwrap();
+    assert!(matches!(
+        spaces::delete(&conn, &main.id),
+        Err(AppError::Invalid(_))
+    ));
+}
