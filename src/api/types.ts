@@ -40,6 +40,8 @@ export interface NodeModel {
   y: number;
   width: number | null;
   height: number | null;
+  /** Ссылка на заметку/папку базы знаний: путь относительно vault (`/`), ТЗ §4.10. */
+  kbPath: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -98,6 +100,8 @@ export interface NodePatch {
   color?: string | null;
   width?: number | null;
   height?: number | null;
+  /** Путь в vault (`a/b.md` или папка `a/b`); null — отвязать. */
+  kbPath?: string | null;
 }
 
 export interface NodePosition {
@@ -129,4 +133,75 @@ export interface SpaceTask {
   x: number;
   y: number;
   createdAt: number;
+}
+
+// ---- база знаний (ТЗ §4.10), src-tauri/src/vault/mod.rs ----
+
+export type VaultEntryKind = "folder" | "note";
+
+export interface VaultEntry {
+  /** Имя на диске (у заметки — с `.md`). */
+  name: string;
+  /** Путь относительно корня vault, разделитель `/`. */
+  path: string;
+  kind: VaultEntryKind;
+  mtime: number;
+  /** Только у папок. */
+  children: VaultEntry[] | null;
+}
+
+export interface NoteFile {
+  path: string;
+  content: string;
+  mtime: number;
+}
+
+export interface SearchLine {
+  /** Номер строки, с 0. */
+  line: number;
+  text: string;
+}
+
+export interface SearchHit {
+  path: string;
+  nameMatch: boolean;
+  /** Всего строк с совпадением (в `lines` — первые несколько). */
+  total: number;
+  lines: SearchLine[];
+}
+
+export interface Backlink {
+  path: string;
+  lines: SearchLine[];
+}
+
+export type VaultEventKind = "create" | "modify" | "remove" | "rename";
+
+/** Событие watcher'а (Tauri-событие `vault:changed`, пачкой). */
+export interface VaultEvent {
+  kind: VaultEventKind;
+  /** Путь (у rename — новый). */
+  path: string;
+  /** Старый путь у rename. */
+  from: string | null;
+  /** Папка (у удалённого всегда false). */
+  isDir: boolean;
+}
+
+export interface VaultInfo {
+  root: string;
+  ok: boolean;
+  error: string | null;
+}
+
+/** Нода, привязанная к заметке/папке (`kb_linked_nodes`). */
+export interface LinkedNode {
+  id: string;
+  title: string;
+  kind: NodeKind;
+  status: TaskStatus | null;
+  spaceId: string;
+  spaceName: string;
+  /** Холсты от корневого холста пространства до холста ноды — аргумент `revealNode`. */
+  canvasChain: string[];
 }

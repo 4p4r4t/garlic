@@ -384,6 +384,70 @@ button.crumb:hover {
   min-height: 0;
 }
 
+/* Оба режима смонтированы; неактивный скрыт без размонтирования и без
+   display:none (размеры сохраняются — React Flow и CodeMirror не перемеряются). */
+.graph-view,
+.kb-host {
+  position: absolute;
+  inset: 0;
+}
+.graph-view.is-hidden,
+.kb-host.is-hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+.graph-view.is-hidden * ,
+.kb-host.is-hidden * {
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* ---------- переключатель режимов «Граф | База» ---------- */
+
+.tb-mode {
+  flex: 0 0 auto;
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: 7px;
+  background: #101114;
+  border: 1px solid var(--border);
+}
+.tb-mode button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.tb-mode button:hover {
+  color: var(--fg);
+}
+.tb-mode button[aria-checked="true"] {
+  background: #2a2c34;
+  color: var(--fg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+.tb-mode button[aria-checked="true"].is-kb {
+  background: #7f6df2;
+  color: #fff;
+}
+.tb-vault-name {
+  padding: 3px 8px;
+  font-weight: 600;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
 .canvas-root {
   position: absolute;
   inset: 0;
@@ -1529,4 +1593,37 @@ button.crumb:hover {
   background: rgba(255, 255, 255, 0.07);
   color: var(--muted);
   font-size: 11px;
+}
+
+/* ---------- настройки: папка базы знаний ---------- */
+
+.st-vault-path {
+  margin: 2px 0 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--muted);
+  word-break: break-all;
+}
+.st-vault-path.is-error,
+.st-hint.is-error {
+  color: var(--danger);
+}
+.st-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--node-border);
+  border-radius: 6px;
+  background: var(--menu-hover);
+  color: var(--fg);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.st-btn:hover:not(:disabled) {
+  border-color: #7f6df2;
 }

@@ -11,6 +11,7 @@ import { api, type SpaceTask, type TaskStatus } from "../api";
 import { PALETTE } from "../canvas/palette";
 import { cameraFocus } from "../layers/CameraFocus";
 import { NEXT_STATUS, useGraph } from "../store/graph";
+import { isGraphMode } from "../store/mode";
 import { buildTree, canvasChain, type TreeRow } from "./tree";
 
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "done"];
@@ -76,6 +77,7 @@ export function TaskOverview() {
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
+      if (!isGraphMode()) return;
       if (e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();

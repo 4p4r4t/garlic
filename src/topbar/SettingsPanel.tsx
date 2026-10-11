@@ -1,10 +1,11 @@
-import { useEffect, useRef, type RefObject } from "react";
-import { Ban } from "lucide-react";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { Ban, FolderOpen } from "lucide-react";
 
-import type { TaskStatus } from "../api";
+import { api, type TaskStatus, type VaultInfo } from "../api";
 import { StatusIcon, STATUS_META } from "../canvas/NodeParts";
 import { PALETTE } from "../canvas/palette";
 import { useGraph, useStatusColors } from "../store/graph";
+import { useMode } from "../store/mode";
 
 interface Props {
   /** Кнопка-шестерёнка: клик по ней не считается «кликом мимо». */
@@ -15,8 +16,9 @@ interface Props {
 const STATUSES: TaskStatus[] = ["todo", "in_progress", "done"];
 
 /**
- * Панель настроек (ТЗ §4.6.2): цвета статусов (палитра или «нет») и показ
- * вложенных уровней. Всё сохраняется в app_state и применяется сразу.
+ * Панель настроек (ТЗ §4.6.2): цвета статусов (палитра или «нет»), показ
+ * вложенных уровней, папка базы знаний (ТЗ §4.10). Всё сохраняется в app_state
+ * и применяется сразу.
  * Закрывается по Esc / клику мимо.
  */
 export function SettingsPanel({ anchor, onClose }: Props) {
@@ -36,11 +38,10 @@ export function SettingsPanel({ anchor, onClose }: Props) {
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onDown, true);
-    window.addEventListener("blur", onClose);
+    // Без закрытия по blur: системный диалог выбора папки уводит фокус из окна.
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("pointerdown", onDown, true);
-      window.removeEventListener("blur", onClose);
     };
   }, [anchor, onClose]);
 
@@ -92,6 +93,63 @@ export function SettingsPanel({ anchor, onClose }: Props) {
         />
         <span>Показывать вложенные уровни</span>
       </label>
+      <div className="st-divider" />
+      <VaultSetting />
+    </div>
+  );
+}
+
+/** Папка базы знаний: путь + «Изменить…» (системный выбор папки). */
+function VaultSetting() {
+  const [info, setInfo] = useState<VaultInfo | null>(null);
+  const [busy, setBusy] = useState(false);
+  const showError = useGraph((s) => s.showError);
+  const bumpVault = useMode((s) => s.bumpVault);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .vaultInfo()
+      .then((i) => alive && setInfo(i))
+      .catch(showError);
+    return () => {
+      alive = false;
+    };
+  }, [showError]);
+
+  const pick = async () => {
+    setBusy(true);
+    try {
+      const { open } = await import("@tauri-apps/plugin-dialog");
+      const dir = await open({
+        directory: true,
+        multiple: false,
+        defaultPath: info?.root,
+        title: "Папка базы знаний",
+      });
+      if (typeof dir === "string" && dir && dir !== info?.root) {
+        setInfo(await api.vaultSetPath(dir));
+        bumpVault();
+      }
+    } catch (e) {
+      showError(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="st-vault">
+      <div className="st-title">База знаний</div>
+      <div className={info && !info.ok ? "st-vault-path is-error" : "st-vault-path"} title={info?.root}>
+        {info?.root ?? "…"}
+      </div>
+      {info?.error && <div className="st-hint is-error">{info.error}</div>}
+      <button type="button" className="st-btn" disabled={busy} onClick={() => void pick()}>
+        <FolderOpen size={13} />
+        <span>Изменить папку…</span>
+      </button>
+      <div className="st-hint">Обычные .md-файлы; можно выбрать существующий vault Obsidian.</div>
     </div>
   );
 }

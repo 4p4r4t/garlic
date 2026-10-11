@@ -3,21 +3,27 @@
 
 import { invoke as rawInvoke } from "@tauri-apps/api/core";
 
-import { serial } from "./queue";
+import { serial, serialVault } from "./queue";
 
 import type {
+  Backlink,
   Canvas,
   CanvasData,
   EdgeModel,
+  LinkedNode,
   NewEdge,
   NewNode,
   NodeModel,
   NodePatch,
   NodePosition,
+  NoteFile,
+  SearchHit,
   Space,
   SpaceTask,
   SubtreeLevel,
   TaskStatus,
+  VaultEntry,
+  VaultInfo,
   Viewport,
 } from "./types";
 
@@ -27,6 +33,11 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   return serial(() => rawInvoke<T>(cmd, args));
 }
 
+/** Изменения vault — по своей очереди; чтение/поиск — без очереди. */
+function invokeVault<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  return serialVault(() => rawInvoke<T>(cmd, args));
+}
+
 /** Ключи app_state. */
 export const APP_STATE = {
   activeSpace: "active_space",
@@ -34,7 +45,18 @@ export const APP_STATE = {
   showNested: "show_nested",
   /** JSON `{todo, in_progress, done}` — ключ палитры или null: заливка по статусу (ТЗ §4.3). */
   statusColors: "status_colors",
+  /** "graph" | "kb" — режим окна (ТЗ §4.10). */
+  mode: "ui.mode",
+  /** JSON состояния режима «База»: вкладки, раскрытые папки, панели. */
+  kbUi: "kb.ui",
+  /** Абсолютный путь vault (пишет `vault_set_path`). */
+  vaultPath: "kb.vault_path",
+  /** Папка по умолчанию для новых заметок из графа (M5.2), путь в vault. */
+  kbDefaultFolder: "kb.default_folder",
 } as const;
+
+/** Tauri-событие watcher'а с пачкой `VaultEvent[]`. */
+export const VAULT_EVENT = "vault:changed";
 
 export const api = {
   // пространства
@@ -72,6 +94,35 @@ export const api = {
 
   // обзор задач (ТЗ §4.6.1)
   listSpaceTasks: (spaceId: string) => invoke<SpaceTask[]>("list_space_tasks", { spaceId }),
+
+  // база знаний (ТЗ §4.10). Пути — относительно vault, `/`; папка-корень — "".
+  vaultInfo: () => rawInvoke<VaultInfo>("vault_info"),
+  /** Сменить папку vault (создаётся при отсутствии), перезапустить слежение. */
+  vaultSetPath: (path: string) => invokeVault<VaultInfo>("vault_set_path", { path }),
+  vaultTree: () => rawInvoke<VaultEntry[]>("vault_tree"),
+  vaultRead: (path: string) => rawInvoke<NoteFile>("vault_read", { path }),
+  /** Атомарная запись; → новый mtime. Эхо этой записи watcher во фронт не шлёт. */
+  vaultWrite: (path: string, content: string) =>
+    invokeVault<number>("vault_write", { path, content }),
+  /** Новая заметка в `dir` (имя очищается, ` 2`/` 3` при занятом) → её путь. */
+  vaultCreateNote: (dir: string, name: string, content?: string) =>
+    invokeVault<string>("vault_create_note", { dir, name, content: content ?? null }),
+  /** Новая папка в `dir` → её путь. */
+  vaultCreateFolder: (dir: string, name: string) =>
+    invokeVault<string>("vault_create_folder", { dir, name }),
+  /** Переименование (у заметки имя без .md); kb_path нод переписываются → новый путь. */
+  vaultRename: (path: string, newName: string) =>
+    invokeVault<string>("vault_rename", { path, newName }),
+  /** Перемещение в папку (`""` — корень); kb_path нод переписываются → новый путь. */
+  vaultMove: (path: string, newDir: string) => invokeVault<string>("vault_move", { path, newDir }),
+  /** В корзину ОС. */
+  vaultDelete: (path: string) => invokeVault<void>("vault_delete", { path }),
+  vaultSearch: (query: string, limit?: number) =>
+    rawInvoke<SearchHit[]>("vault_search", { query, limit: limit ?? null }),
+  vaultBacklinks: (path: string) => rawInvoke<Backlink[]>("vault_backlinks", { path }),
+  vaultAbsPath: (path: string) => rawInvoke<string>("vault_abs_path", { path }),
+  /** Ноды всех пространств с kb_path == path. */
+  kbLinkedNodes: (path: string) => invoke<LinkedNode[]>("kb_linked_nodes", { path }),
 };
 
 /** Текст ошибки из команды (AppError сериализуется строкой). */

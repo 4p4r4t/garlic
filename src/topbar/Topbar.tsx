@@ -1,24 +1,103 @@
-import { useCallback, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Layers, Layers3, Search, Settings } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  BookOpen,
+  ChevronDown,
+  ChevronRight,
+  Layers,
+  Layers3,
+  Network,
+  Search,
+  Settings,
+} from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 
+import { api } from "../api";
 import { useGraph } from "../store/graph";
+import { useMode } from "../store/mode";
 import { InlineInput } from "./InlineInput";
 import { SettingsPanel } from "./SettingsPanel";
 import { SpacesPanel } from "./SpacesPanel";
 
 /**
- * Тонкий топбар (ТЗ §3): [Пространства] [имя пространства] › крошки слоёв … [поиск][настройки].
- * Поиск — M6.
+ * Тонкий топбар (ТЗ §3): [Граф | База] [Пространства] [имя пространства] › крошки слоёв …
+ * [поиск][настройки]. В режиме «База» вместо графовых элементов — имя vault.
+ * Поиск по графу — M6.
  */
 export function Topbar() {
+  const mode = useMode((s) => s.mode);
+  return (
+    <header className="topbar">
+      <ModeSwitch />
+      {mode === "graph" ? <GraphBar /> : <KbBar />}
+      <SettingsButton />
+    </header>
+  );
+}
+
+/** Сегмент «Граф | База» (Ctrl+1 / Ctrl+2). */
+function ModeSwitch() {
+  const mode = useMode((s) => s.mode);
+  const setMode = useMode((s) => s.setMode);
+  return (
+    <div className="tb-mode" role="radiogroup" aria-label="Режим">
+      <button
+        type="button"
+        role="radio"
+        aria-checked={mode === "graph"}
+        title="Граф (Ctrl+1)"
+        onClick={() => setMode("graph")}
+      >
+        <Network size={13} />
+        <span>Граф</span>
+      </button>
+      <button
+        type="button"
+        role="radio"
+        className="is-kb"
+        aria-checked={mode === "kb"}
+        title="База знаний (Ctrl+2)"
+        onClick={() => setMode("kb")}
+      >
+        <BookOpen size={13} />
+        <span>База</span>
+      </button>
+    </div>
+  );
+}
+
+/** Топбар режима «База»: имя папки vault (полный путь — в подсказке). */
+function KbBar() {
+  const [root, setRoot] = useState<string | null>(null);
+  const tick = useMode((s) => s.vaultTick);
+  useEffect(() => {
+    let alive = true;
+    void api
+      .vaultInfo()
+      .then((i) => alive && setRoot(i.root))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [tick]);
+  const name = root ? root.split(/[\\/]/).filter(Boolean).pop() : "";
+  return (
+    <>
+      <div className="tb-vault-name" title={root ?? ""}>
+        {name}
+      </div>
+      <div className="tb-spacer" />
+    </>
+  );
+}
+
+function GraphBar() {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const close = useCallback(() => setOpen(false), []);
   const ready = useGraph((s) => s.phase === "ready");
 
   return (
-    <header className="topbar">
+    <>
       <div className="tb-spaces">
         <button
           ref={btnRef}
@@ -42,8 +121,7 @@ export function Topbar() {
       <button type="button" className="tb-icon" disabled title="Поиск (скоро)">
         <Search size={15} />
       </button>
-      <SettingsButton />
-    </header>
+    </>
   );
 }
 

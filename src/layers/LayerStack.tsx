@@ -13,6 +13,7 @@ import { useShallow } from "zustand/react/shallow";
 
 import { FlowCanvas } from "../canvas/Canvas";
 import { useGraph } from "../store/graph";
+import { isGraphMode } from "../store/mode";
 import { CameraFocus } from "./CameraFocus";
 
 /** Длительность анимации входа/выхода (ТЗ §4.5: ~200 мс). Зеркало — styles.css. */
@@ -59,7 +60,7 @@ export function LayerStack() {
   useEffect(() => {
     if (layers.length < 2) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (e.key !== "Escape" || e.defaultPrevented || !isGraphMode()) return;
       const t = e.target as HTMLElement | null;
       if (t?.closest("input, textarea, [contenteditable='true']")) return;
       if (document.querySelector(".ctx-menu, .node-menu, .spaces-panel, .is-connecting")) return;

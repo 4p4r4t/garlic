@@ -32,6 +32,7 @@ import { useLayerExtras } from "../layers/extras";
 import { AnchorNode, GhostNode } from "../layers/LayerNodes";
 import { viewportBus } from "../layers/viewportBus";
 import { useGraph } from "../store/graph";
+import { useMode } from "../store/mode";
 import { BulkBar } from "./BulkBar";
 import { CanvasMenu } from "./CanvasMenu";
 import { EDGE_COLOR, isHandleSide, type FlowEdge, type FlowNode } from "./flow";
@@ -553,6 +554,10 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
   // Нижние уровни (под тинтом) — только картинка: без событий, клавиатуры и
   // обработчиков (обработчики, которые React Flow хранит в сторе, — NOOP, см. выше).
   const live = active;
+  // В режиме «База» граф скрыт: клавиши React Flow (Delete, Shift, Space…)
+  // слушают document и не должны срабатывать (ТЗ §4.10).
+  const graphMode = useMode((s) => s.mode === "graph");
+  const keys = live && graphMode;
   return (
     <div
       ref={rootRef}
@@ -584,12 +589,12 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
         zoomOnScroll={live}
         zoomOnPinch={live}
         preventScrolling={live}
-        disableKeyboardA11y={!live}
-        deleteKeyCode={live ? DELETE_KEYS : null}
-        multiSelectionKeyCode={live ? MULTI_SELECT_KEYS : null}
-        selectionKeyCode={live ? "Shift" : null}
-        panActivationKeyCode={live ? "Space" : null}
-        zoomActivationKeyCode={live ? "Control" : null}
+        disableKeyboardA11y={!keys}
+        deleteKeyCode={keys ? DELETE_KEYS : null}
+        multiSelectionKeyCode={keys ? MULTI_SELECT_KEYS : null}
+        selectionKeyCode={keys ? "Shift" : null}
+        panActivationKeyCode={keys ? "Space" : null}
+        zoomActivationKeyCode={keys ? "Control" : null}
         zoomOnDoubleClick={false}
         onConnect={live ? onConnect : NOOP}
         onConnectStart={live ? onConnectStart : NOOP}
