@@ -135,6 +135,24 @@ interface GraphState {
   diveTo: (nodeId: string) => Promise<void>;
   setShowNested: (show: boolean) => Promise<void>;
 
+  // --- обзор задач (ТЗ §4.6.1) ---
+  /**
+   * Открыть цепочку слоёв `chain` (от корневого холста пространства до холста
+   * ноды) и выделить ноду. В отличие от `diveTo`, нода может быть где угодно
+   * в пространстве, а не только под верхним холстом.
+   */
+  revealNode: (chain: string[], nodeId: string) => Promise<void>;
+  /**
+   * Статус задачи с любого уровня пространства, в т.ч. с незагруженного холста.
+   * `ownerId` — задача-владелец её холста (для бейджа прогресса), null — корень.
+   */
+  setTaskStatus: (
+    canvasId: string,
+    id: string,
+    status: TaskStatus,
+    ownerId: string | null,
+  ) => Promise<void>;
+
   showError: (e: unknown) => void;
   dismissToast: () => void;
 }
@@ -623,6 +641,50 @@ export const useGraph = create<GraphState>()((set, get) => {
       } catch (e) {
         get().showError(e);
       }
+    },
+
+    revealNode: async (chain, nodeId) => {
+      const space = get().spaces.find((sp) => sp.id === get().activeSpaceId);
+      if (!space || chain[0] !== space.rootCanvas) return;
+      await navigate(chain, nodeId);
+    },
+
+    setTaskStatus: async (canvasId, id, status, ownerId) => {
+      if (get().canvases[canvasId]) {
+        // Холст в кэше: оптимистично, с живым бейджем владельца.
+        await get().updateNode(canvasId, id, { status });
+      } else {
+        try {
+          await api.updateNode(id, { status });
+        } catch (e) {
+          get().showError(e);
+          return;
+        }
+        // Бейдж владельца: его холст мог быть загружен — берём свежий прогресс.
+        const holders = ownerId
+          ? Object.entries(get().canvases)
+              .filter(([, v]) => v.nodes.some((n) => n.id === ownerId))
+              .map(([cid]) => cid)
+          : [];
+        for (const cid of holders) {
+          try {
+            const fresh = progressMap((await api.loadCanvas(cid)).progress);
+            patchView(cid, (v) => ({
+              ...v,
+              nodes: v.nodes.map((n) => {
+                if (n.id !== ownerId) return n;
+                const data = { ...n.data, progress: fresh.get(n.id) };
+                if (!data.progress) delete data.progress;
+                return { ...n, data };
+              }),
+            }));
+          } catch (e) {
+            get().showError(e);
+          }
+        }
+      }
+      // Просвечивающие ноды показывают статус и бейджи — перечитываем.
+      await refreshSubtree();
     },
 
     showError: (e) => {

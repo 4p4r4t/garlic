@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { LayerStack } from "./layers/LayerStack";
+import { TaskOverview } from "./overview/TaskOverview";
 import { useGraph } from "./store/graph";
 import { Topbar } from "./topbar/Topbar";
 
@@ -20,7 +21,10 @@ export default function App() {
       <Topbar />
       <main className="canvas-area">
         {phase === "ready" ? (
-          <LayerStack />
+          <>
+            <LayerStack />
+            <TaskOverview />
+          </>
         ) : phase === "error" ? (
           <div className="screen-msg is-error">
             Не удалось открыть данные: {fatal}

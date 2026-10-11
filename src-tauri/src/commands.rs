@@ -124,3 +124,13 @@ pub async fn get_app_state(db: Cmd<'_>, key: String) -> AppResult<Option<String>
 pub async fn set_app_state(db: Cmd<'_>, key: String, value: String) -> AppResult<()> {
     repo::app_state::set(&*db.conn()?, &key, &value)
 }
+
+// ---- обзор задач (ТЗ §4.6.1) ----
+
+#[tauri::command]
+pub async fn list_space_tasks(
+    db: Cmd<'_>,
+    space_id: String,
+) -> AppResult<Vec<crate::model::SpaceTask>> {
+    repo::tasks::list_space_tasks(&*db.conn()?, &space_id)
+}

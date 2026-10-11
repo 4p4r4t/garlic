@@ -6,6 +6,7 @@ pub mod canvases;
 pub mod edges;
 pub mod nodes;
 pub mod spaces;
+pub mod tasks;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 

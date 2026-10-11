@@ -113,3 +113,20 @@ export interface NewEdge {
   sourceHandle: HandleSide | null;
   targetHandle: HandleSide | null;
 }
+
+/** Задача пространства для обзора задач (`list_space_tasks`, ТЗ §4.6.1). */
+export interface SpaceTask {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  color: string | null;
+  /** Холст, на котором лежит задача. */
+  canvasId: string;
+  /** Задача-владелец холста; null — корневой холст пространства. */
+  parentNodeId: string | null;
+  /** 0 — корневой холст, 1 — подзадачи, … */
+  depth: number;
+  x: number;
+  y: number;
+  createdAt: number;
+}
