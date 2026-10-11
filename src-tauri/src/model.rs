@@ -1,0 +1,199 @@
+//! Доменные типы, общие для repo, команд Tauri и фронтенда (serde, camelCase).
+//! TS-зеркало: `src/api/types.ts` — держать синхронным.
+
+use std::fmt;
+use std::str::FromStr;
+
+use serde::{Deserialize, Deserializer, Serialize};
+
+use crate::error::AppError;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NodeKind {
+    Task,
+    Note,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatus {
+    Todo,
+    InProgress,
+    Done,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HandleSide {
+    Top,
+    Right,
+    Bottom,
+    Left,
+}
+
+macro_rules! str_enum {
+    ($ty:ty { $($variant:ident => $s:literal),+ $(,)? }) => {
+        impl $ty {
+            pub fn as_str(self) -> &'static str {
+                match self { $(Self::$variant => $s),+ }
+            }
+        }
+        impl fmt::Display for $ty {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
+        impl FromStr for $ty {
+            type Err = AppError;
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    $($s => Ok(Self::$variant),)+
+                    other => Err(AppError::Invalid(format!(
+                        concat!("неизвестное значение ", stringify!($ty), ": {}"), other
+                    ))),
+                }
+            }
+        }
+    };
+}
+
+str_enum!(NodeKind { Task => "task", Note => "note" });
+str_enum!(TaskStatus { Todo => "todo", InProgress => "in_progress", Done => "done" });
+str_enum!(HandleSide { Top => "top", Right => "right", Bottom => "bottom", Left => "left" });
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Viewport {
+    pub x: f64,
+    pub y: f64,
+    pub zoom: f64,
+}
+
+impl Default for Viewport {
+    fn default() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            zoom: 1.0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Space {
+    pub id: String,
+    pub name: String,
+    pub root_canvas: String,
+    pub sort_order: i64,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Canvas {
+    pub id: String,
+    pub space_id: String,
+    /// `None` для корневого холста пространства.
+    pub owner_node: Option<String>,
+    pub viewport: Viewport,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Node {
+    pub id: String,
+    pub canvas_id: String,
+    pub kind: NodeKind,
+    pub title: String,
+    pub body: String,
+    /// Только для `task`, у заметок всегда `None`.
+    pub status: Option<TaskStatus>,
+    pub color: Option<String>,
+    pub x: f64,
+    pub y: f64,
+    pub width: Option<f64>,
+    pub height: Option<f64>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Edge {
+    pub id: String,
+    pub canvas_id: String,
+    pub source: String,
+    pub target: String,
+    pub source_handle: Option<HandleSide>,
+    pub target_handle: Option<HandleSide>,
+    pub label: Option<String>,
+}
+
+/// Результат `load_canvas`: всё, что нужно для отрисовки одного холста.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasData {
+    pub canvas: Canvas,
+    pub nodes: Vec<Node>,
+    pub edges: Vec<Edge>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewNode {
+    pub canvas_id: String,
+    pub kind: NodeKind,
+    #[serde(default)]
+    pub title: String,
+    pub x: f64,
+    pub y: f64,
+}
+
+/// Частичное обновление ноды. Отсутствующее поле — не трогать.
+/// Для nullable-полей (`status`, `color`, `width`, `height`) явный `null` — сбросить.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodePatch {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub body: Option<String>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub status: Option<Option<TaskStatus>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub color: Option<Option<String>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub width: Option<Option<f64>>,
+    #[serde(default, deserialize_with = "double_option")]
+    pub height: Option<Option<f64>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NodePosition {
+    pub id: String,
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewEdge {
+    pub canvas_id: String,
+    pub source: String,
+    pub target: String,
+    #[serde(default)]
+    pub source_handle: Option<HandleSide>,
+    #[serde(default)]
+    pub target_handle: Option<HandleSide>,
+}
+
+/// Отличает «поле отсутствует» (`None`) от «поле = null» (`Some(None)`).
+fn double_option<'de, T, D>(de: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    Option::<T>::deserialize(de).map(Some)
+}
