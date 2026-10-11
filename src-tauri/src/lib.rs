@@ -40,6 +40,7 @@ pub fn run() {
             commands::save_viewport,
             commands::create_node,
             commands::update_node,
+            commands::set_status_many,
             commands::move_nodes,
             commands::delete_nodes,
             commands::count_descendants,

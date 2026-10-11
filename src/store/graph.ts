@@ -33,6 +33,11 @@ import {
   type FlowEdge,
   type FlowNode,
 } from "../canvas/flow";
+import {
+  DEFAULT_STATUS_COLORS,
+  parseStatusColors,
+  type StatusColors,
+} from "../canvas/palette";
 import { viewportBus } from "../layers/viewportBus";
 
 export interface CanvasView {
@@ -137,6 +142,13 @@ interface GraphState {
 
   showError: (e: unknown) => void;
   dismissToast: () => void;
+
+  // --- v1.2: групповые действия, цвета статусов ---
+  /** Цвет заливки по статусу (настройки, app_state.status_colors). */
+  statusColors: StatusColors;
+  setStatusColor: (status: TaskStatus, color: string | null) => Promise<void>;
+  /** Статус всем задачам из ids (заметки пропускаются) одним пакетом. */
+  setStatusMany: (canvasId: string, ids: string[], status: TaskStatus) => Promise<void>;
 }
 
 function toView(data: CanvasData): CanvasView {
@@ -343,7 +355,8 @@ export const useGraph = create<GraphState>()((set, get) => {
           const space = spaces.find((s) => s.id === saved) ?? spaces[0];
           if (space.id !== saved) await api.setAppState(APP_STATE.activeSpace, space.id);
           const showNested = (await api.getAppState(APP_STATE.showNested)) !== "0";
-          set({ showNested });
+          const statusColors = parseStatusColors(await api.getAppState(APP_STATE.statusColors));
+          set({ showNested, statusColors });
           const data = await api.loadCanvas(space.rootCanvas);
           const subtree = await fetchSubtree(space.rootCanvas);
           viewportBus.reset(data.canvas.viewport);
@@ -442,16 +455,8 @@ export const useGraph = create<GraphState>()((set, get) => {
     connect: async (canvasId, ends) => {
       const view = get().canvases[canvasId];
       if (!view || ends.source === ends.target) return;
-      // Межуровневая стрелка бывает только «родитель → подзадача» (ТЗ §6):
-      // стрелка, брошенная из подзадачи на ноду-родителя слоя, разворачивается.
-      if (ends.target === view.canvas.ownerNode) {
-        ends = {
-          source: ends.target,
-          target: ends.source,
-          sourceHandle: ends.targetHandle,
-          targetHandle: ends.sourceHandle,
-        };
-      }
+      // Направление — всегда как провели, в т.ч. «подзадача → родитель» (ТЗ §4.5):
+      // межуровневую стрелку Rust принимает, если любой её конец — владелец холста.
       // Дубли (та же пара source → target) запрещены и в Rust — тихо игнорируем.
       if (view.edges.some((e) => e.source === ends.source && e.target === ends.target)) return;
       try {
@@ -633,5 +638,51 @@ export const useGraph = create<GraphState>()((set, get) => {
       set({ toast: msg });
     },
     dismissToast: () => set({ toast: null }),
+
+    statusColors: DEFAULT_STATUS_COLORS,
+
+    setStatusColor: async (status, color) => {
+      const statusColors = { ...get().statusColors, [status]: color };
+      set({ statusColors });
+      try {
+        await api.setAppState(APP_STATE.statusColors, JSON.stringify(statusColors));
+      } catch (e) {
+        get().showError(e);
+      }
+    },
+
+    setStatusMany: async (canvasId, ids, status) => {
+      const view = get().canvases[canvasId];
+      if (!view) return;
+      const want = new Set(ids);
+      const tasks = view.nodes
+        .filter((n) => want.has(n.id) && n.data.model.kind === "task" && n.data.model.status !== status)
+        .map((n) => n.id);
+      if (!tasks.length) return;
+      const changed = new Set(tasks);
+      // Оптимистично, как updateNode.
+      patchView(canvasId, (v) => ({
+        ...v,
+        nodes: v.nodes.map((n) =>
+          changed.has(n.id) ? { ...n, data: { ...n.data, model: { ...n.data.model, status } } } : n,
+        ),
+      }));
+      refreshOwnerProgress(canvasId);
+      try {
+        const fresh = new Map((await api.setStatusMany(tasks, status)).map((m) => [m.id, m]));
+        patchView(canvasId, (v) => ({
+          ...v,
+          nodes: v.nodes.map((n) => {
+            const m = fresh.get(n.id);
+            return m ? { ...n, data: { ...n.data, model: { ...m, x: n.data.model.x, y: n.data.model.y } } } : n;
+          }),
+        }));
+      } catch (e) {
+        fail(canvasId, e);
+      }
+    },
   };
 });
+
+/** Цвета статусов из настроек (ТЗ §4.3, §4.6.2) — для всех, кто рисует задачи. */
+export const useStatusColors = (): StatusColors => useGraph((s) => s.statusColors);

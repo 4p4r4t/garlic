@@ -968,3 +968,255 @@ button.crumb:hover {
   text-overflow: ellipsis;
   pointer-events: none;
 }
+
+/* ================= v1.2 (ТЗ §4.3, §4.6.2) ================= */
+
+/* ---------- крупные прямоугольные ноды: 240 × 90, заголовок до 3 строк ---------- */
+/* Зеркало размера — NEW_NODE_SIZE в canvas/Canvas.tsx. */
+
+.g-node {
+  display: flex;
+  flex-direction: column;
+  width: 240px;
+  min-width: 0;
+  max-width: none;
+  min-height: 90px;
+  padding: 10px 12px 8px;
+}
+
+.g-task {
+  align-items: stretch;
+  gap: 6px;
+}
+
+.g-node .node-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.g-note .note-head .node-title {
+  -webkit-line-clamp: 2;
+}
+
+.g-note .note-preview {
+  -webkit-line-clamp: 2;
+}
+
+/* низ карточки задачи: маркер + подпись статуса слева, бейдж прогресса справа */
+.node-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 20px;
+  margin-top: auto;
+  font-size: 11.5px;
+  line-height: 16px;
+}
+
+.node-foot .status-marker {
+  margin: 0 0 0 -4px;
+}
+
+.status-label {
+  color: var(--node-muted);
+  white-space: nowrap;
+}
+
+.g-node.is-filled .status-label {
+  opacity: 0.8;
+}
+
+.node-foot .progress-badge {
+  margin: 0 -4px 0 auto;
+}
+
+/* done на цветной заливке: заливка уже говорит «готово» — гасим слабее, текст читаем */
+.g-task.status-done.is-filled {
+  opacity: 0.85;
+}
+
+.g-task.status-done.is-filled .node-title {
+  opacity: 0.85;
+  text-decoration-thickness: 1.5px;
+}
+
+/* ---------- групповые действия ---------- */
+
+.bulk-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px;
+  transform: translateX(-50%);
+  background: var(--menu-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: 12.5px;
+  white-space: nowrap;
+  user-select: none;
+  animation: layer-fade-in 120ms ease-out;
+}
+
+.bulk-count {
+  padding: 0 8px;
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.bulk-label {
+  padding: 0 4px 0 6px;
+  color: var(--faint);
+}
+
+.bulk-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--border);
+}
+
+.bulk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.bulk-btn:not(:disabled):hover,
+.bulk-btn:focus-visible {
+  background: var(--menu-hover);
+  color: var(--fg);
+  outline: none;
+}
+
+.bulk-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.bulk-status.status-in_progress svg {
+  color: #e2b04a;
+}
+
+.bulk-status.status-done svg {
+  color: #6fbf73;
+}
+
+.bulk-btn.is-danger:not(:disabled):hover,
+.bulk-btn.is-danger:focus-visible {
+  color: var(--danger);
+}
+
+/* ---------- настройки (шестерёнка в топбаре) ---------- */
+
+.tb-settings {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.tb-icon.is-open {
+  background: var(--menu-hover);
+  color: var(--fg);
+}
+
+.settings-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 55;
+  width: 340px;
+  padding: 10px 12px 12px;
+  background: var(--menu-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  user-select: none;
+}
+
+.st-title {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.st-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.st-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg);
+}
+
+.st-status svg {
+  color: var(--muted);
+}
+
+.st-row.status-in_progress .st-status svg {
+  color: #e2b04a;
+}
+
+.st-row.status-done .st-status svg {
+  color: #6fbf73;
+}
+
+.st-swatches {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 22px;
+}
+
+.settings-panel .swatch.is-active {
+  box-shadow: 0 0 0 2px var(--menu-bg), 0 0 0 3.5px var(--fg);
+}
+
+.st-hint {
+  margin-top: 4px;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.st-divider {
+  height: 1px;
+  margin: 10px 0;
+  background: var(--border);
+}
+
+.st-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.st-check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+/* с Shift просвечивающие ноды — пустое место: рамка выделения начинается и на них */
+.is-select-key .react-flow__node-ghost {
+  pointer-events: none !important;
+}

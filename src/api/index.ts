@@ -16,6 +16,7 @@ import type {
   NodePosition,
   Space,
   SubtreeLevel,
+  TaskStatus,
   Viewport,
 } from "./types";
 
@@ -30,6 +31,8 @@ export const APP_STATE = {
   activeSpace: "active_space",
   /** "1"/"0" — показывать ли вложенные уровни на текущем холсте (ТЗ §4.5.1). */
   showNested: "show_nested",
+  /** JSON `{todo, in_progress, done}` — ключ палитры или null: заливка по статусу (ТЗ §4.3). */
+  statusColors: "status_colors",
 } as const;
 
 export const api = {
@@ -51,6 +54,9 @@ export const api = {
   // ноды
   createNode: (input: NewNode) => invoke<NodeModel>("create_node", { input }),
   updateNode: (id: string, patch: NodePatch) => invoke<NodeModel>("update_node", { id, patch }),
+  /** Пакетная смена статуса; заметки пропускаются. Возвращает обновлённые задачи. */
+  setStatusMany: (ids: string[], status: TaskStatus) =>
+    invoke<NodeModel[]>("set_status_many", { ids, status }),
   moveNodes: (positions: NodePosition[]) => invoke<void>("move_nodes", { positions }),
   deleteNodes: (ids: string[]) => invoke<number>("delete_nodes", { ids }),
   countDescendants: (nodeId: string) => invoke<number>("count_descendants", { nodeId }),

@@ -300,7 +300,7 @@ fn edges_create_validate_and_delete() {
 }
 
 #[test]
-fn cross_canvas_edges_only_from_anchor() {
+fn cross_canvas_edges_only_with_anchor() {
     let (conn, root) = setup();
     let parent = node(&conn, &root, NodeKind::Task, "parent");
     let other = node(&conn, &root, NodeKind::Task, "other");
@@ -317,10 +317,29 @@ fn cross_canvas_edges_only_from_anchor() {
         edge(&conn, &child.id, &other, &sub),
         Err(AppError::Invalid(_))
     ));
+    // Подзадача → родитель: тоже допустимо, направление сохраняется (ТЗ §4.5).
+    let back = edge(&conn, &child.id, &sub, &parent).expect("subtask -> anchor");
+    let back = edges::get(&conn, &back).unwrap();
+    assert_eq!(
+        (back.source.as_str(), back.target.as_str()),
+        (sub.as_str(), parent.as_str())
+    );
+    assert_eq!(back.canvas_id, child.id);
     assert!(matches!(
         edge(&conn, &child.id, &sub, &parent),
         Err(AppError::Invalid(_))
     ));
+    assert!(matches!(
+        edge(&conn, &child.id, &sub, &other),
+        Err(AppError::Invalid(_))
+    ));
+    // Межуровневая стрелка — только в холсте, чей владелец её конец.
+    assert!(matches!(
+        edge(&conn, &root, &sub, &parent),
+        Err(AppError::Invalid(_))
+    ));
+    let data = canvases::load(&conn, &child.id).unwrap();
+    assert_eq!(data.edges.len(), 2);
     assert!(matches!(
         edge(&conn, &root, &parent, &sub),
         Err(AppError::Invalid(_))
@@ -469,6 +488,32 @@ fn set_status(conn: &Connection, id: &str, status: TaskStatus) {
         },
     )
     .unwrap();
+}
+
+#[test]
+fn set_status_many_updates_tasks_and_skips_notes() {
+    let (conn, root) = setup();
+    let a = node(&conn, &root, NodeKind::Task, "a");
+    let b = node(&conn, &root, NodeKind::Task, "b");
+    let n = node(&conn, &root, NodeKind::Note, "n");
+    let ids = vec![a.clone(), n.clone(), b.clone(), "missing".to_string()];
+    let updated = nodes::set_status_many(&conn, &ids, TaskStatus::Done).unwrap();
+    assert_eq!(
+        updated.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(),
+        vec![a.as_str(), b.as_str()]
+    );
+    assert!(updated.iter().all(|m| m.status == Some(TaskStatus::Done)));
+    assert_eq!(
+        nodes::get(&conn, &a).unwrap().status,
+        Some(TaskStatus::Done)
+    );
+    assert_eq!(nodes::get(&conn, &n).unwrap().status, None);
+    let updated =
+        nodes::set_status_many(&conn, std::slice::from_ref(&b), TaskStatus::InProgress).unwrap();
+    assert_eq!(updated[0].status, Some(TaskStatus::InProgress));
+    assert!(nodes::set_status_many(&conn, &[], TaskStatus::Todo)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]

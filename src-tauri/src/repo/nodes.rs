@@ -148,6 +148,30 @@ pub fn update(conn: &Connection, id: &str, patch: &NodePatch) -> AppResult<Node>
     Ok(node)
 }
 
+/// Пакетная смена статуса (групповые действия, ТЗ §4.3). Заметки и неизвестные
+/// id пропускаются. Возвращает обновлённые задачи (в порядке `ids`).
+pub fn set_status_many(
+    conn: &Connection,
+    ids: &[String],
+    status: TaskStatus,
+) -> AppResult<Vec<Node>> {
+    let tx = conn.unchecked_transaction()?;
+    let mut updated = Vec::new();
+    {
+        let now = now_ms();
+        let mut stmt = tx.prepare(
+            "UPDATE nodes SET status = ?2, updated_at = ?3 WHERE id = ?1 AND kind = 'task'",
+        )?;
+        for id in ids {
+            if stmt.execute(params![id, status.as_str(), now])? > 0 {
+                updated.push(get(&tx, id)?);
+            }
+        }
+    }
+    tx.commit()?;
+    Ok(updated)
+}
+
 /// Пакетное перемещение нод. Неизвестный id — ошибка, вся пачка откатывается.
 pub fn move_many(conn: &Connection, positions: &[NodePosition]) -> AppResult<()> {
     let tx = conn.unchecked_transaction()?;

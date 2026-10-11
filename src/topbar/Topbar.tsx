@@ -4,11 +4,12 @@ import { useShallow } from "zustand/react/shallow";
 
 import { useGraph } from "../store/graph";
 import { InlineInput } from "./InlineInput";
+import { SettingsPanel } from "./SettingsPanel";
 import { SpacesPanel } from "./SpacesPanel";
 
 /**
  * Тонкий топбар (ТЗ §3): [Пространства] [имя пространства] › крошки слоёв … [поиск][настройки].
- * Поиск — M6, настройки — позже.
+ * Поиск — M6.
  */
 export function Topbar() {
   const [open, setOpen] = useState(false);
@@ -41,9 +42,7 @@ export function Topbar() {
       <button type="button" className="tb-icon" disabled title="Поиск (скоро)">
         <Search size={15} />
       </button>
-      <button type="button" className="tb-icon" disabled title="Настройки (скоро)">
-        <Settings size={15} />
-      </button>
+      <SettingsButton />
     </header>
   );
 }
@@ -135,5 +134,30 @@ function NestedToggle() {
     >
       <Layers3 size={15} />
     </button>
+  );
+}
+
+/** Шестерёнка → панель настроек (ТЗ §4.6.2). */
+function SettingsButton() {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  const ready = useGraph((s) => s.phase === "ready");
+  return (
+    <div className="tb-settings">
+      <button
+        ref={btnRef}
+        type="button"
+        className={open ? "tb-icon is-open" : "tb-icon"}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        disabled={!ready}
+        title="Настройки"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Settings size={15} />
+      </button>
+      {open && <SettingsPanel anchor={btnRef} onClose={close} />}
+    </div>
   );
 }

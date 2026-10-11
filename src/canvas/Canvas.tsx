@@ -13,6 +13,7 @@ import {
   ConnectionLineType,
   ConnectionMode,
   ReactFlow,
+  useKeyPress,
   useReactFlow,
   type Connection,
   type Edge,
@@ -26,11 +27,12 @@ import {
   type XYPosition,
 } from "@xyflow/react";
 
-import { api, type HandleSide, type NodeKind } from "../api";
+import { api, type HandleSide, type NodeKind, type TaskStatus } from "../api";
 import { useLayerExtras } from "../layers/extras";
 import { AnchorNode, GhostNode } from "../layers/LayerNodes";
 import { viewportBus } from "../layers/viewportBus";
 import { useGraph } from "../store/graph";
+import { BulkBar } from "./BulkBar";
 import { CanvasMenu } from "./CanvasMenu";
 import { EDGE_COLOR, isHandleSide, type FlowEdge, type FlowNode } from "./flow";
 import { GhostEdge } from "./GhostEdge";
@@ -92,8 +94,8 @@ interface HoverTip {
   text: string;
 }
 
-/** Ожидаемый размер новой ноды (min-width .g-node × одна строка) — для её размещения. */
-const NEW_NODE_SIZE = { w: 150, h: 40 };
+/** Размер новой ноды (.g-node: 240 × min 90, ТЗ §4.3) — для её размещения. */
+const NEW_NODE_SIZE = { w: 240, h: 90 };
 
 /** Ближайшая к точке сторона прямоугольника — для стрелки, брошенной на тело ноды. */
 function nearestSide(rect: DOMRect, x: number, y: number): HandleSide {
@@ -171,6 +173,7 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
   const persistDelete = useGraph((s) => s.persistDelete);
   const startEditing = useGraph((s) => s.startEditing);
   const showError = useGraph((s) => s.showError);
+  const setStatusMany = useGraph((s) => s.setStatusMany);
 
   const { screenToFlowPosition, deleteElements, setViewport } = useReactFlow<FlowNode, FlowEdge>();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -179,6 +182,10 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
   const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null);
   const [tip, setTip] = useState<HoverTip | null>(null);
   const [connecting, setConnecting] = useState(false);
+  /** Удаление уже подтверждено (групповая панель) — onBeforeDelete не спрашивает повторно. */
+  const deleteConfirmed = useRef(false);
+  /** Shift зажат — драг по пустому месту рисует рамку выделения (ТЗ §4.3, v1.2). */
+  const selectKey = useKeyPress("Shift");
   const closeMenu = useCallback(() => setMenu(null), []);
   const closeNodeMenu = useCallback(() => setNodeMenu(null), []);
   const closeMenus = useCallback(() => {
@@ -461,6 +468,7 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
   /** Подтверждение, если у удаляемых задач есть подзадачи (ТЗ §4.3). */
   const onBeforeDelete: OnBeforeDelete<FlowNode, FlowEdge> = useCallback(
     async ({ nodes: doomed }) => {
+      if (deleteConfirmed.current) return true;
       try {
         let nested = 0;
         for (const n of doomed) {
@@ -497,6 +505,47 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
     [startEditing],
   );
 
+  // --- групповые действия (ТЗ §4.3, v1.2) ---
+  const selectedNodes = useMemo(() => view?.nodes.filter((n) => n.selected) ?? [], [view]);
+  const selectedTasks = selectedNodes.filter((n) => n.data.model.kind === "task").length;
+
+  const onBulkStatus = useCallback(
+    (status: TaskStatus) =>
+      void setStatusMany(
+        canvasId,
+        selectedNodes.map((n) => n.id),
+        status,
+      ),
+    [canvasId, selectedNodes, setStatusMany],
+  );
+
+  /** Одно подтверждение на всё (с числом вложенных элементов), дальше — как Delete. */
+  const onBulkDelete = useCallback(async () => {
+    const ids = selectedNodes.map((n) => n.id);
+    if (!ids.length) return;
+    let nested = 0;
+    try {
+      for (const n of selectedNodes) {
+        if (n.type === "task") nested += await api.countDescendants(n.id);
+      }
+    } catch (e) {
+      showError(e);
+      return;
+    }
+    const what = `Удалить выделенные ноды (${ids.length})`;
+    const ok = window.confirm(
+      nested > 0 ? `${what} вместе с вложенными элементами (${nested})?` : `${what}?`,
+    );
+    if (!ok) return;
+    const edgeIds = view?.edges.filter((e) => e.selected).map((e) => ({ id: e.id })) ?? [];
+    deleteConfirmed.current = true;
+    try {
+      await deleteElements({ nodes: ids.map((id) => ({ id })), edges: edgeIds });
+    } finally {
+      deleteConfirmed.current = false;
+    }
+  }, [deleteElements, selectedNodes, showError, view]);
+
   const connectionLineStyle = useMemo(() => ({ stroke: EDGE_COLOR, strokeWidth: 1.5 }), []);
 
   if (!view) return null;
@@ -507,7 +556,7 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
   return (
     <div
       ref={rootRef}
-      className={`canvas-root${connecting ? " is-connecting" : ""}`}
+      className={`canvas-root${connecting ? " is-connecting" : ""}${live && selectKey ? " is-select-key" : ""}`}
       onPointerDownCapture={live ? onPointerDownCapture : undefined}
     >
       <ReactFlow<FlowNode, FlowEdge>
@@ -589,6 +638,14 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
           onSubtasks={onNodeSubtasks}
           onDelete={onNodeDelete}
           onClose={closeNodeMenu}
+        />
+      )}
+      {live && selectedNodes.length >= 2 && (
+        <BulkBar
+          count={selectedNodes.length}
+          tasks={selectedTasks}
+          onStatus={onBulkStatus}
+          onDelete={() => void onBulkDelete()}
         />
       )}
       {tip && (

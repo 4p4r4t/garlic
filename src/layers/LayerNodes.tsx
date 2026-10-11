@@ -5,10 +5,12 @@ import { memo } from "react";
 import type { NodeProps } from "@xyflow/react";
 import { StickyNote } from "lucide-react";
 
-import type { FlowNode } from "../canvas/flow";
+import type { TaskStatus } from "../api";
+import type { FlowNode, Progress } from "../canvas/flow";
 import { NodeHandles } from "../canvas/NodeHandles";
-import { notePreview, PlainTitle, ProgressBadge, StatusIcon } from "../canvas/NodeParts";
-import { fillStyle } from "../canvas/palette";
+import { notePreview, PlainTitle, ProgressBadge, StatusIcon, STATUS_META } from "../canvas/NodeParts";
+import { fillStyle, nodeFillColor } from "../canvas/palette";
+import { useStatusColors } from "../store/graph";
 
 /**
  * Нода-родитель открытого слоя: выглядит ровно как на своём холсте и лежит на
@@ -19,18 +21,16 @@ import { fillStyle } from "../canvas/palette";
 function AnchorNodeImpl({ data }: NodeProps<FlowNode>) {
   const m = data.model;
   const status = m.status ?? "todo";
+  const fill = nodeFillColor(m, useStatusColors());
   return (
     <div
-      className={`g-node g-task status-${status} is-anchor${m.color ? " is-filled" : ""}`}
-      style={fillStyle(m.color)}
+      className={`g-node g-task status-${status} is-anchor${fill ? " is-filled" : ""}`}
+      style={fillStyle(fill)}
       title="Клик — выйти из слоя"
     >
       <NodeHandles />
-      <span className="status-marker">
-        <StatusIcon status={status} />
-      </span>
       <PlainTitle model={m} placeholder="Без названия" />
-      <ProgressBadge progress={data.progress} />
+      <TaskFoot status={status} progress={data.progress} />
     </div>
   );
 }
@@ -42,11 +42,12 @@ function AnchorNodeImpl({ data }: NodeProps<FlowNode>) {
 function GhostNodeImpl({ data }: NodeProps<FlowNode>) {
   const m = data.model;
   const depth = Math.min(data.depth ?? 1, 3);
-  const fill = fillStyle(m.color);
+  const color = nodeFillColor(m, useStatusColors());
+  const fill = fillStyle(color);
   if (m.kind === "note") {
     const text = notePreview(m.body);
     return (
-      <div className={`g-node g-note is-ghost ghost-d${depth}${m.color ? " is-filled" : ""}`} style={fill}>
+      <div className={`g-node g-note is-ghost ghost-d${depth}${color ? " is-filled" : ""}`} style={fill}>
         <NodeHandles inert />
         <div className="note-head">
           <StickyNote className="note-icon" size={14} strokeWidth={2} />
@@ -59,15 +60,25 @@ function GhostNodeImpl({ data }: NodeProps<FlowNode>) {
   const status = m.status ?? "todo";
   return (
     <div
-      className={`g-node g-task status-${status} is-ghost ghost-d${depth}${m.color ? " is-filled" : ""}`}
+      className={`g-node g-task status-${status} is-ghost ghost-d${depth}${color ? " is-filled" : ""}`}
       style={fill}
     >
       <NodeHandles inert />
+      <PlainTitle model={m} placeholder="Без названия" />
+      <TaskFoot status={status} progress={data.progress} />
+    </div>
+  );
+}
+
+/** Низ карточки задачи без интерактива: маркер и подпись статуса, бейдж (как в TaskNode). */
+function TaskFoot({ status, progress }: { status: TaskStatus; progress: Progress | undefined }) {
+  return (
+    <div className="node-foot">
       <span className="status-marker">
         <StatusIcon status={status} />
       </span>
-      <PlainTitle model={m} placeholder="Без названия" />
-      <ProgressBadge progress={data.progress} />
+      <span className="status-label">{STATUS_META[status].label}</span>
+      <ProgressBadge progress={progress} />
     </div>
   );
 }

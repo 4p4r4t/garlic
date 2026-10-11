@@ -9,7 +9,7 @@ use tauri::State;
 use crate::error::{AppError, AppResult};
 use crate::model::{
     Canvas, CanvasData, Edge, NewEdge, NewNode, Node, NodePatch, NodePosition, Space, SubtreeLevel,
-    Viewport,
+    TaskStatus, Viewport,
 };
 use crate::repo;
 
@@ -84,6 +84,15 @@ pub async fn create_node(db: Cmd<'_>, input: NewNode) -> AppResult<Node> {
 #[tauri::command]
 pub async fn update_node(db: Cmd<'_>, id: String, patch: NodePatch) -> AppResult<Node> {
     repo::nodes::update(&*db.conn()?, &id, &patch)
+}
+
+#[tauri::command]
+pub async fn set_status_many(
+    db: Cmd<'_>,
+    ids: Vec<String>,
+    status: TaskStatus,
+) -> AppResult<Vec<Node>> {
+    repo::nodes::set_status_many(&*db.conn()?, &ids, status)
 }
 
 #[tauri::command]

@@ -45,8 +45,9 @@ pub fn get(conn: &Connection, id: &str) -> AppResult<Edge> {
 }
 
 /// Создаёт стрелку. Правила (ТЗ §6):
-/// - обе ноды лежат на холсте `canvas_id`, либо `source` — нода-владелец
-///   этого холста (якорь слоя: «родитель → подзадача»);
+/// - обе ноды лежат на холсте `canvas_id`, либо одна из них — нода-владелец
+///   этого холста (якорь слоя), а другая лежит на нём: «родитель → подзадача»
+///   или «подзадача → родитель» (направление — как провели, ТЗ §4.5);
 /// - петли и дубли (та же пара source → target) запрещены.
 pub fn create(conn: &Connection, input: &NewEdge) -> AppResult<Edge> {
     let canvas = canvases::get(conn, &input.canvas_id)?;
@@ -57,12 +58,14 @@ pub fn create(conn: &Connection, input: &NewEdge) -> AppResult<Edge> {
     }
     let source = nodes::get(conn, &input.source)?;
     let target = nodes::get(conn, &input.target)?;
-    if target.canvas_id != canvas.id {
-        return Err(AppError::Invalid("целевая нода на другом холсте".into()));
-    }
-    let source_is_anchor = canvas.owner_node.as_deref() == Some(source.id.as_str());
-    if source.canvas_id != canvas.id && !source_is_anchor {
+    let is_anchor = |id: &str| canvas.owner_node.as_deref() == Some(id);
+    let source_ok = source.canvas_id == canvas.id || is_anchor(&source.id);
+    let target_ok = target.canvas_id == canvas.id || is_anchor(&target.id);
+    if !source_ok {
         return Err(AppError::Invalid("исходная нода на другом холсте".into()));
+    }
+    if !target_ok {
+        return Err(AppError::Invalid("целевая нода на другом холсте".into()));
     }
     let dup: bool = conn.query_row(
         "SELECT EXISTS(SELECT 1 FROM edges WHERE canvas_id = ?1 AND source = ?2 AND target = ?3)",
