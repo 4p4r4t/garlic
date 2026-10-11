@@ -1921,3 +1921,21 @@ button.kb-link:focus-visible {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* у ноды-заметки ссылка — расположение её файла: тише, чем ссылка задачи */
+.kb-link.is-path.is-note {
+  color: var(--node-muted);
+  font-size: 11px;
+}
+
+.kb-link.is-path.is-note .kb-link-text {
+  text-decoration: none;
+}
+
+button.kb-link.is-path.is-note:hover {
+  color: #b3a9f4;
+}
+
+.g-note .note-preview {
+  -webkit-line-clamp: 3;
+}

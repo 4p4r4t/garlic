@@ -377,7 +377,9 @@ export const useKb = create<KbState>()((set, get) => {
     },
 
     revealInTree: (path) => {
-      const add = ancestors(path).filter((a) => !get().expanded.includes(a));
+      // Папка (путь без .md) раскрывается и сама — «показать папку» из графа (M5.2).
+      const chain = isMd(path) || !path ? ancestors(path) : [...ancestors(path), path];
+      const add = chain.filter((a) => !get().expanded.includes(a));
       set((s) => ({
         expanded: [...s.expanded, ...add],
         selected: path,

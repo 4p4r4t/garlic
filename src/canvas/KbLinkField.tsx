@@ -145,7 +145,7 @@ function KbLinkFieldImpl({ slot, path, title, onSet }: Props) {
     if (onSet) openMenuAt(e.clientX, e.clientY);
   };
 
-  const cls = `kb-link ${state}${onSet ? "" : " is-readonly"}`;
+  const cls = `kb-link ${state}${slot.showPath ? " is-path" : ""}${onSet ? "" : " is-readonly"}`;
   const body = (
     <>
       {Icon && <Icon size={ICON} strokeWidth={2} className="kb-link-icon" />}
