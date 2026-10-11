@@ -3,7 +3,7 @@ import type { NodeProps } from "@xyflow/react";
 
 import { useGraph, useStatusColors } from "../store/graph";
 import type { FlowNode } from "./flow";
-import { TASK_LINK } from "./kbLink";
+import { COMMENT_LINK, RESULT_LINK } from "./kbLink";
 import { KbLinkField } from "./KbLinkField";
 import { NodeHandles } from "./NodeHandles";
 import { ProgressBadge, StatusIcon, STATUS_META } from "./NodeParts";
@@ -18,8 +18,12 @@ function TaskNodeImpl({ data, selected }: NodeProps<FlowNode>) {
   const { label } = STATUS_META[status];
   const fill = nodeFillColor(m, useStatusColors());
   const updateNode = useGraph((s) => s.updateNode);
-  const setLink = useCallback(
+  const setComment = useCallback(
     (kbPath: string | null) => updateNode(m.canvasId, m.id, { kbPath }),
+    [updateNode, m.canvasId, m.id],
+  );
+  const setResult = useCallback(
+    (kbResultPath: string | null) => updateNode(m.canvasId, m.id, { kbResultPath }),
     [updateNode, m.canvasId, m.id],
   );
 
@@ -30,7 +34,11 @@ function TaskNodeImpl({ data, selected }: NodeProps<FlowNode>) {
     >
       <NodeHandles />
       <NodeTitle model={m} placeholder="Без названия" />
-      <KbLinkField slot={TASK_LINK} path={m.kbPath} title={m.title} onSet={setLink} />
+      {/* Три раздела задачи (ТЗ §4.11): название, «Комментарий», «Результат». */}
+      <div className="task-links">
+        <KbLinkField slot={COMMENT_LINK} path={m.kbPath} title={m.title} onSet={setComment} />
+        <KbLinkField slot={RESULT_LINK} path={m.kbResultPath} title={m.title} onSet={setResult} />
+      </div>
       <div className="node-foot">
         <button
           type="button"

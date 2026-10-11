@@ -1,14 +1,21 @@
 // Поиск по базе (Ctrl+Shift+F): полнотекстовый, на стороне Rust; результаты
 // по файлам со сниппетами, совпадения подсвечены. Клик — открыть на строке.
+// При фильтре «только результаты» (ТЗ §4.11) — только по результатам задач
+// (переключатель «везде»).
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Search, X } from "lucide-react";
 
 import { api, type SearchHit } from "../api";
 import { noteName, parentDir } from "./paths";
+import { inResults, useResults } from "./results";
+import { ScopeToggle } from "./ScopeToggle";
 import { useKb } from "./store";
 
 const DEBOUNCE_MS = 200;
+const LIMIT = 200;
+/** С фильтром результаты отбираются после поиска — запрашиваем больше файлов. */
+const SCOPED_LIMIT = 2000;
 
 /** Текст с подсвеченными вхождениями `q` (без учёта регистра). */
 export function Highlighted({ text, q }: { text: string; q: string }) {
@@ -36,7 +43,15 @@ export function SearchView() {
   const setQuery = useKb((s) => s.setSearchQuery);
   const focusTick = useKb((s) => s.searchFocus);
   const notesVersion = useKb((s) => s.notes);
-  const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const resultsOnly = useKb((s) => s.resultsOnly);
+  const byPath = useResults((s) => s.byPath);
+  const [everywhere, setEverywhere] = useState(false);
+  const scoped = resultsOnly && !everywhere;
+  const [allHits, setHits] = useState<SearchHit[] | null>(null);
+  const hits = useMemo(
+    () => (allHits && scoped ? allHits.filter((h) => inResults(h.path, byPath)).slice(0, LIMIT) : allHits),
+    [allHits, scoped, byPath],
+  );
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -54,7 +69,7 @@ export function SearchView() {
     let alive = true;
     const t = setTimeout(() => {
       api
-        .vaultSearch(q, 200)
+        .vaultSearch(q, scoped ? SCOPED_LIMIT : LIMIT)
         .then((h) => alive && setHits(h))
         .catch(() => alive && setHits([]));
     }, DEBOUNCE_MS);
@@ -62,7 +77,7 @@ export function SearchView() {
       alive = false;
       clearTimeout(t);
     };
-  }, [query, notesVersion]);
+  }, [query, notesVersion, scoped]);
 
   const total = hits?.reduce((n, h) => n + Math.max(h.total, h.nameMatch ? 1 : 0), 0) ?? 0;
 
@@ -89,9 +104,18 @@ export function SearchView() {
           </button>
         )}
       </div>
+      {resultsOnly && (
+        <div className="kb-search-scope">
+          <ScopeToggle everywhere={everywhere} onChange={setEverywhere} />
+        </div>
+      )}
       {hits && (
         <div className="kb-search-summary">
-          {hits.length ? `${total} совпадений в ${hits.length} файлах` : "Ничего не найдено"}
+          {hits.length
+            ? `${total} совпадений в ${hits.length} файлах`
+            : scoped
+              ? "Среди результатов ничего не найдено"
+              : "Ничего не найдено"}
         </div>
       )}
       <div className="kb-search-results">

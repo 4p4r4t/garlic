@@ -1,14 +1,14 @@
 // Поле-ссылка ноды на базу знаний (ТЗ §4.10): описание «слота» и действия.
 //
 // Всё здесь не знает, где хранится ссылка: действия получают текущий путь и
-// функцию записи `LinkSetter`. Сейчас у каждой ноды один слот (`nodes.kb_path`):
-// у задачи — `TASK_LINK`, у заметки — `NOTE_FILE` (её собственный .md). В M5.3
-// у задачи появятся «Комментарий» и «Результат» — ещё два слота со своими
-// подписью, иконкой, именем по умолчанию и папкой.
+// функцию записи `LinkSetter`. Слоты: у задачи — «Комментарий» (`COMMENT_LINK`,
+// `nodes.kb_path`) и «Результат» (`RESULT_LINK`, `nodes.kb_result_path`), ТЗ §4.11;
+// у заметки — `NOTE_FILE` (её собственный .md, `nodes.kb_path`). Папку по
+// умолчанию для роли слота выбирает Rust (`kb_create_target(role)`).
 
-import { FileText, type LucideIcon } from "lucide-react";
+import { FileText, Flag, MessageSquare, type LucideIcon } from "lucide-react";
 
-import { api } from "../api";
+import { api, type LinkRole } from "../api";
 import { useGraph } from "../store/graph";
 import { useMode } from "../store/mode";
 
@@ -16,8 +16,8 @@ import { useMode } from "../store/mode";
 export type LinkSetter = (path: string | null) => Promise<void>;
 
 export interface LinkSlot {
-  /** Ключ слота (для React key, будущих ролей). */
-  key: string;
+  /** Роль ссылки: от неё — папка по умолчанию (настройки) и подпись в «Нодах графа». */
+  role: LinkRole;
   /** Маленькая подпись над полем; нет — без подписи. */
   label?: string;
   /** Иконка подписи. */
@@ -26,8 +26,6 @@ export interface LinkSlot {
   placeholder: string;
   /** Имя новой заметки/папки по заголовку ноды. */
   defaultName: (title: string) => string;
-  /** Папка для создания; null — `kb.default_folder` (настройки). */
-  defaultDir: () => string | null;
   /** Можно ли ссылаться на папку (у ноды-заметки — только её .md). */
   allowFolders: boolean;
   /** Показывать путь целиком, а не только имя (у заметки имя = заголовок). */
@@ -38,23 +36,34 @@ export interface LinkSlot {
 export const UNTITLED = "Без названия";
 const byTitle = (title: string) => title.trim() || UNTITLED;
 
-/** Ссылка задачи (M5.2: одна; в M5.3 станет «Комментарием»). */
-export const TASK_LINK: LinkSlot = {
-  key: "kb",
-  placeholder: "+ база знаний",
+/** «Комментарий» задачи: материалы для решения (ТЗ §4.11). Имя — `<Название>`. */
+export const COMMENT_LINK: LinkSlot = {
+  role: "comment",
+  label: "Комментарий",
+  icon: MessageSquare,
+  placeholder: "+ добавить",
   defaultName: byTitle,
-  defaultDir: () => null,
+  allowFolders: true,
+  showPath: false,
+};
+
+/** «Результат» задачи: артефакт, к которому пришли. Имя — `<Название> — результат`. */
+export const RESULT_LINK: LinkSlot = {
+  role: "result",
+  label: "Результат",
+  icon: Flag,
+  placeholder: "+ добавить",
+  defaultName: (title) => `${byTitle(title)} — результат`,
   allowFolders: true,
   showPath: false,
 };
 
 /** Нода-заметка — карточка своего .md. */
 export const NOTE_FILE: LinkSlot = {
-  key: "note",
+  role: "note",
   placeholder: "+ база знаний",
   icon: FileText,
   defaultName: byTitle,
-  defaultDir: () => null,
   allowFolders: false,
   showPath: true,
 };
@@ -76,7 +85,7 @@ export async function createAndLink(
   set: LinkSetter,
 ): Promise<void> {
   try {
-    const path = await api.kbCreateTarget(kind, slot.defaultDir(), slot.defaultName(title));
+    const path = await api.kbCreateTarget(kind, null, slot.defaultName(title), slot.role);
     await set(path);
   } catch (e) {
     showError(e);
@@ -88,9 +97,14 @@ export async function createAndLink(
  * (имя — заголовок ноды), заметка переносится в неё, ссылка ставится на папку.
  * Ссылки других нод на заметку Rust переписал — так же правим кэш графа.
  */
-export async function convertNoteToFolder(path: string, title: string, set: LinkSetter): Promise<void> {
+export async function convertNoteToFolder(
+  slot: LinkSlot,
+  path: string,
+  title: string,
+  set: LinkSetter,
+): Promise<void> {
   try {
-    const folder = await api.kbNoteToFolder(path, byTitle(title));
+    const folder = await api.kbNoteToFolder(path, slot.defaultName(title));
     useGraph.getState().rewriteKbPaths(path, `${folder}/${baseName(path)}`);
     await set(folder);
   } catch (e) {

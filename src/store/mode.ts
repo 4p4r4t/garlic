@@ -70,11 +70,14 @@ export const useMode = create<ModeState>()((set, get) => ({
 export const isGraphMode = () => useMode.getState().mode === "graph";
 
 /**
- * Перейти к ноде графа из «Базы» (правая панель «Ноды графа»): режим «Граф»,
+ * Перейти к ноде графа из «Базы» (правая панель «Ноды графа», маркер задачи
+ * у результата в проводнике): режим «Граф»,
  * при необходимости смена пространства, проваливание по цепочке слоёв,
  * выделение и камера к ноде.
  */
-export async function revealGraphNode(node: LinkedNode): Promise<void> {
+export async function revealGraphNode(
+  node: Pick<LinkedNode, "id" | "spaceId" | "canvasChain">,
+): Promise<void> {
   useMode.getState().setMode("graph");
   const graph = useGraph.getState();
   if (graph.activeSpaceId !== node.spaceId) await graph.switchSpace(node.spaceId);

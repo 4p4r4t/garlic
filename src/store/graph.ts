@@ -722,12 +722,16 @@ export const useGraph = create<GraphState>()((set, get) => {
           let hit = false;
           const nodes = v.nodes.map((n) => {
             const m = n.data.model;
-            const next = m.kbPath ? rebase(m.kbPath, from, to) : null;
-            if (next === null) return n;
-            const title = m.kind === "note" ? (noteStem(next) ?? m.title) : m.title;
-            if (next === m.kbPath && title === m.title) return n;
+            // Обе роли задачи (ТЗ §4.11): «Комментарий» (kbPath) и «Результат».
+            const next = m.kbPath ? (rebase(m.kbPath, from, to) ?? m.kbPath) : null;
+            const result = m.kbResultPath ? (rebase(m.kbResultPath, from, to) ?? m.kbResultPath) : null;
+            const title = m.kind === "note" && next ? (noteStem(next) ?? m.title) : m.title;
+            if (next === m.kbPath && result === m.kbResultPath && title === m.title) return n;
             hit = true;
-            return { ...n, data: { ...n.data, model: { ...m, kbPath: next, title } } };
+            return {
+              ...n,
+              data: { ...n.data, model: { ...m, kbPath: next, kbResultPath: result, title } },
+            };
           });
           canvases[cid] = hit ? { ...v, nodes } : v;
           changed ||= hit;

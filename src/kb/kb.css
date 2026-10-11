@@ -1117,3 +1117,96 @@
 .kb-switcher-hints kbd {
   margin-right: 2px;
 }
+
+/* ================= M5.3: роли ссылок, фильтр «только результаты» (ТЗ §4.11) ================= */
+
+.kb-graph-node-role {
+  color: var(--kb-text-faint);
+}
+
+/* флажок фильтра в шапке проводника — включён: акцент */
+.kb-nav-btn.is-filter,
+.kb-nav-btn.is-filter:hover {
+  background: rgba(127, 109, 242, 0.18);
+  color: #b3a9f4;
+}
+
+/* маркеры статуса задач у результата в дереве */
+.kb-result-markers {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: 4px;
+}
+.kb-result-marker {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--kb-text-faint);
+  cursor: pointer;
+}
+.kb-result-marker svg {
+  width: 13px;
+  height: 13px;
+}
+.kb-result-marker:hover {
+  background: var(--kb-hover-strong);
+  color: var(--kb-text);
+}
+.kb-result-marker.status-in_progress {
+  color: #6c9cf0;
+}
+.kb-result-marker.status-done {
+  color: #44cf6e;
+}
+.kb-result-more {
+  padding: 0 3px;
+  color: var(--kb-text-faint);
+  font-size: 11px;
+}
+
+/* область Ctrl+O и поиска при фильтре: «результаты | везде» */
+.kb-scope {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--kb-border);
+  border-radius: 6px;
+  background: var(--kb-bg);
+}
+.kb-scope-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--kb-text-faint);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.kb-scope-btn:hover {
+  color: var(--kb-text-muted);
+}
+.kb-scope-btn.is-active {
+  background: var(--kb-hover-strong);
+  color: var(--kb-text);
+}
+.kb-scope-btn.is-active svg {
+  color: #b3a9f4;
+}
+.kb-switcher-scope {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--kb-border);
+}
+.kb-search-scope {
+  margin: 0 10px 4px;
+}

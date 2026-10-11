@@ -1,12 +1,25 @@
 // Проводник vault (левая панель): дерево, сворачивание, новая заметка/папка,
 // переименование на месте (F2 / меню), удаление (Delete / меню, в корзину),
 // перетаскивание в папку, контекстное меню, сортировка «папки, затем по имени».
+// Фильтр «Показывать только результаты» (ТЗ §4.11): флажок в шапке; дерево —
+// только результаты задач и папки-предки, у результата — маркеры статуса задач
+// (клик — к задаче в граф).
 
-import { useCallback, useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type KeyboardEvent,
+} from "react";
 import {
   ChevronRight,
   ChevronsDownUp,
   FilePlus2,
+  Flag,
   FolderOpen,
   FolderPlus,
   PanelRight,
@@ -14,10 +27,13 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { api, type VaultEntry } from "../api";
+import { api, type ResultLink, type VaultEntry } from "../api";
+import { StatusIcon, STATUS_META } from "../canvas/NodeParts";
 import { useGraph } from "../store/graph";
+import { revealGraphNode } from "../store/mode";
 import { ContextMenu, type MenuEntry } from "./ContextMenu";
 import { baseName, isUnder, noteName, parentDir } from "./paths";
+import { filterTree, resultAncestors, taskPathLabel, useResults } from "./results";
 import { useKb } from "./store";
 
 interface MenuState {
@@ -54,6 +70,16 @@ export function confirmDelete(entry: { path: string; isFolder: boolean }): boole
   );
 }
 
+/** Флажок «только результаты»: при включении — раскрыть папки до всех результатов. */
+async function toggleResultsOnly() {
+  const kb = useKb.getState();
+  const on = !kb.resultsOnly;
+  kb.setResultsOnly(on);
+  if (!on) return;
+  await useResults.getState().load();
+  if (useKb.getState().resultsOnly) kb.expandMany(resultAncestors(useResults.getState().byPath));
+}
+
 export function Explorer() {
   const tree = useKb((s) => s.tree);
   const folders = useKb((s) => s.folders);
@@ -63,6 +89,13 @@ export function Explorer() {
   const collapseAll = useKb((s) => s.collapseAll);
   const move = useKb((s) => s.move);
   const error = useKb((s) => s.error);
+  const resultsOnly = useKb((s) => s.resultsOnly);
+  const byPath = useResults((s) => s.byPath);
+  const resultsLoaded = useResults((s) => s.loaded);
+  const shown = useMemo(
+    () => (resultsOnly ? filterTree(tree, byPath) : tree),
+    [resultsOnly, tree, byPath],
+  );
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [rootDrop, setRootDrop] = useState(false);
   const closeMenu = useCallback(() => setMenu(null), []);
@@ -97,6 +130,19 @@ export function Explorer() {
         <button type="button" className="kb-nav-btn" title="Свернуть всё" onClick={collapseAll}>
           <ChevronsDownUp size={16} />
         </button>
+        <button
+          type="button"
+          className={resultsOnly ? "kb-nav-btn is-active is-filter" : "kb-nav-btn"}
+          title={
+            resultsOnly
+              ? "Показаны только результаты задач — нажмите, чтобы показать всё"
+              : "Показывать только результаты задач"
+          }
+          aria-pressed={resultsOnly}
+          onClick={() => void toggleResultsOnly()}
+        >
+          <Flag size={16} />
+        </button>
       </div>
       <div
         className={rootDrop ? "kb-tree is-drop" : "kb-tree"}
@@ -122,7 +168,12 @@ export function Explorer() {
       >
         {error && <div className="kb-empty is-error">{error}</div>}
         {!error && tree.length === 0 && <div className="kb-empty">Пусто. Создайте первую заметку.</div>}
-        <TreeLevel entries={tree} depth={0} onMenu={setMenu} />
+        {!error && resultsOnly && resultsLoaded && tree.length > 0 && shown.length === 0 && (
+          <div className="kb-empty">
+            Результатов пока нет. Привяжите «Результат» к задаче в графе.
+          </div>
+        )}
+        <TreeLevel entries={shown} depth={0} onMenu={setMenu} />
       </div>
       {menu && <TreeMenu menu={menu} onClose={closeMenu} />}
     </div>
@@ -161,6 +212,8 @@ function TreeItem({
   const selected = useKb((s) => s.selected === entry.path);
   const active = useKb((s) => !isFolder && s.tabs.find((t) => t.id === s.activeId)?.path === entry.path);
   const renaming = useKb((s) => s.renaming === entry.path);
+  const results = useResults((s) => s.byPath.get(entry.path));
+  const resultsOnly = useKb((s) => s.resultsOnly);
   const [drop, setDrop] = useState(false);
   const rowRef = useRef<HTMLDivElement>(null);
 
@@ -258,6 +311,7 @@ function TreeItem({
         ) : (
           <span className="kb-tree-label">{label}</span>
         )}
+        {resultsOnly && results && !renaming && <ResultMarkers links={results} />}
       </div>
       {isFolder && expanded && entry.children && entry.children.length > 0 && (
         <div className="kb-tree-children" style={{ ["--guide-x" as string]: `${15 + depth * 17}px` }}>
@@ -267,6 +321,39 @@ function TreeItem({
     </div>
   );
 }
+
+const MAX_MARKERS = 3;
+
+/** Маркеры статуса задач, чей это «Результат»; клик — к задаче в граф. */
+const ResultMarkers = memo(function ResultMarkers({ links }: { links: readonly ResultLink[] }) {
+  const shown = links.slice(0, MAX_MARKERS);
+  const rest = links.slice(MAX_MARKERS);
+  return (
+    <span className="kb-result-markers">
+      {shown.map((r) => (
+        <button
+          key={r.id}
+          type="button"
+          className={`kb-result-marker status-${r.status}`}
+          title={`${taskPathLabel(r)}\n${STATUS_META[r.status].label} — клик: перейти к задаче`}
+          aria-label={`Перейти к задаче «${r.title}»`}
+          onClick={(e) => {
+            e.stopPropagation();
+            void revealGraphNode(r);
+          }}
+          onDoubleClick={(e) => e.stopPropagation()}
+        >
+          <StatusIcon status={r.status} />
+        </button>
+      ))}
+      {rest.length > 0 && (
+        <span className="kb-result-more" title={rest.map(taskPathLabel).join("\n")}>
+          +{rest.length}
+        </span>
+      )}
+    </span>
+  );
+});
 
 function RenameInput({ entry, initial }: { entry: VaultEntry; initial: string }) {
   const ref = useRef<HTMLInputElement>(null);

@@ -56,14 +56,17 @@ function KbLinkFieldImpl({ slot, path, title, onSet }: Props) {
   const broken = !!path && stat !== undefined && !stat.exists;
   const state = !path ? "is-empty" : broken ? "is-broken" : isDir ? "is-folder" : "is-note";
   const shown = path ? (slot.showPath ? linkPathLabel(path) : linkName(path)) : slot.placeholder;
+  const what = slot.label ? `«${slot.label}»: ` : "";
   const Icon = !path ? null : broken ? CircleAlert : isDir ? Folder : FileText;
   const tip = !onSet
-    ? path ?? undefined
+    ? path
+      ? `${what}${path}`
+      : undefined
     : !path
-      ? "Привязать заметку или папку базы знаний"
+      ? `${what}привязать заметку или папку базы знаний`
       : broken
-        ? `${path} — не найдено`
-        : `${path}\nКлик — открыть в «Базе», ПКМ — действия`;
+        ? `${what}${path} — не найдено`
+        : `${what}${path}\nКлик — открыть в «Базе», ПКМ — действия`;
 
   const items = (): PopupEntry[] => {
     if (!onSet) return [];
@@ -112,7 +115,7 @@ function KbLinkFieldImpl({ slot, path, title, onSet }: Props) {
             {
               label: "Создать папку",
               icon: <FolderPlus size={14} />,
-              onClick: () => void convertNoteToFolder(path, title, onSet),
+              onClick: () => void convertNoteToFolder(slot, path, title, onSet),
             },
           ]
         : []),
@@ -155,10 +158,10 @@ function KbLinkFieldImpl({ slot, path, title, onSet }: Props) {
   );
 
   return (
-    <div className="kb-link-row">
+    <div className={`kb-link-row role-${slot.role}`}>
       {slot.label && (
-        <div className="kb-link-label">
-          {slot.icon && <slot.icon size={11} strokeWidth={2} />}
+        <div className="kb-link-label" title={slot.label}>
+          {slot.icon && <slot.icon size={11} strokeWidth={2.2} />}
           <span>{slot.label}</span>
         </div>
       )}

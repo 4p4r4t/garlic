@@ -41,6 +41,8 @@ interface PersistedUi {
   rightWidth: number;
   leftView: LeftView;
   rightView: RightView;
+  /** Фильтр проводника «Показывать только результаты» (ТЗ §4.11). */
+  resultsOnly: boolean;
 }
 
 export const LEFT_MIN = 180;
@@ -71,6 +73,8 @@ interface KbState {
   rightWidth: number;
   leftView: LeftView;
   rightView: RightView;
+  /** Фильтр «Показывать только результаты» (ТЗ §4.11): дерево, Ctrl+O, поиск. */
+  resultsOnly: boolean;
 
   switcherOpen: boolean;
   searchQuery: string;
@@ -96,6 +100,8 @@ interface KbState {
   /** Раскрыть предков пути и выделить его в проводнике. */
   revealInTree: (path: string) => void;
   collapseAll: () => void;
+  /** Раскрыть папки (без выделения). */
+  expandMany: (paths: string[]) => void;
   select: (path: string | null) => void;
   setRenaming: (path: string | null) => void;
 
@@ -113,6 +119,7 @@ interface KbState {
   setRightWidth: (w: number) => void;
   setLeftView: (v: LeftView) => void;
   setRightView: (v: RightView) => void;
+  setResultsOnly: (on: boolean) => void;
   setSwitcherOpen: (open: boolean) => void;
   setSearchQuery: (q: string) => void;
   focusSearch: () => void;
@@ -147,6 +154,7 @@ export const useKb = create<KbState>()((set, get) => {
         rightWidth: s.rightWidth,
         leftView: s.leftView,
         rightView: s.rightView,
+        resultsOnly: s.resultsOnly,
       };
       void api.setAppState(APP_STATE.kbUi, JSON.stringify(ui)).catch(() => undefined);
     }, 400);
@@ -220,6 +228,7 @@ export const useKb = create<KbState>()((set, get) => {
     rightWidth: 280,
     leftView: "files",
     rightView: "backlinks",
+    resultsOnly: false,
     switcherOpen: false,
     searchQuery: "",
     searchFocus: 0,
@@ -241,6 +250,7 @@ export const useKb = create<KbState>()((set, get) => {
         rightWidth: clamp(ui.rightWidth ?? 280, RIGHT_MIN, RIGHT_MAX),
         leftView: ui.leftView === "search" ? "search" : "files",
         rightView: ui.rightView === "outline" || ui.rightView === "nodes" ? ui.rightView : "backlinks",
+        resultsOnly: ui.resultsOnly === true,
       });
       await get().reloadTree();
       const known = new Set(get().notes);
@@ -394,6 +404,13 @@ export const useKb = create<KbState>()((set, get) => {
       persist();
     },
 
+    expandMany: (paths) => {
+      const add = paths.filter((p) => p && !get().expanded.includes(p));
+      if (!add.length) return;
+      set((s) => ({ expanded: [...s.expanded, ...add] }));
+      persist();
+    },
+
     select: (path) => set({ selected: path }),
     setRenaming: (path) => set({ renaming: path }),
 
@@ -508,6 +525,10 @@ export const useKb = create<KbState>()((set, get) => {
     },
     setRightView: (v) => {
       set({ rightView: v, rightOpen: true });
+      persist();
+    },
+    setResultsOnly: (on) => {
+      set({ resultsOnly: on });
       persist();
     },
     setSwitcherOpen: (open) => set({ switcherOpen: open }),

@@ -1,12 +1,16 @@
 // Быстрый переход Ctrl+O: нечёткий поиск заметки по имени (и пути).
 // Enter — открыть, Ctrl+Enter — в новой вкладке, Shift+Enter — создать заметку
-// с введённым именем (если такой нет — Enter тоже создаёт).
+// с введённым именем (если такой нет — Enter тоже создаёт). При фильтре
+// «только результаты» (ТЗ §4.11) ищет среди результатов задач; Tab / переключатель
+// — «везде».
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CornerDownLeft, FilePlus2 } from "lucide-react";
 
 import { fuzzy } from "./fuzzy";
 import { noteName, parentDir } from "./paths";
+import { inResults, useResults } from "./results";
+import { ScopeToggle } from "./ScopeToggle";
 import { useKb } from "./store";
 
 const LIMIT = 50;
@@ -35,7 +39,15 @@ function Marked({ text, indices }: { text: string; indices: number[] }) {
 }
 
 export function QuickSwitcher() {
-  const notes = useKb((s) => s.notes);
+  const allNotes = useKb((s) => s.notes);
+  const resultsOnly = useKb((s) => s.resultsOnly);
+  const byPath = useResults((s) => s.byPath);
+  const [everywhere, setEverywhere] = useState(false);
+  const scoped = resultsOnly && !everywhere;
+  const notes = useMemo(
+    () => (scoped ? allNotes.filter((p) => inResults(p, byPath)) : allNotes),
+    [scoped, allNotes, byPath],
+  );
   const close = () => useKb.getState().setSwitcherOpen(false);
   const [q, setQ] = useState("");
   const [sel, setSel] = useState(0);
@@ -95,7 +107,10 @@ export function QuickSwitcher() {
           spellCheck={false}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Escape") {
+            if (e.key === "Tab" && resultsOnly) {
+              e.preventDefault();
+              setEverywhere((v) => !v);
+            } else if (e.key === "Escape") {
               e.preventDefault();
               e.stopPropagation();
               close();
@@ -112,6 +127,11 @@ export function QuickSwitcher() {
             }
           }}
         />
+        {resultsOnly && (
+          <div className="kb-switcher-scope">
+            <ScopeToggle everywhere={everywhere} onChange={setEverywhere} hint="Tab" />
+          </div>
+        )}
         <div ref={listRef} className="kb-switcher-list">
           {results.map((r, i) => (
             <div
@@ -138,7 +158,9 @@ export function QuickSwitcher() {
               </span>
             </div>
           )}
-          {!count && <div className="kb-switcher-empty">Нет заметок</div>}
+          {!count && (
+            <div className="kb-switcher-empty">{scoped ? "Нет заметок среди результатов" : "Нет заметок"}</div>
+          )}
         </div>
         <div className="kb-switcher-hints">
           <span>
@@ -156,6 +178,11 @@ export function QuickSwitcher() {
           <span>
             <kbd>Shift</kbd>+<kbd>↵</kbd> создать
           </span>
+          {resultsOnly && (
+            <span>
+              <kbd>Tab</kbd> {everywhere ? "только результаты" : "везде"}
+            </span>
+          )}
           <span>
             <kbd>Esc</kbd> закрыть
           </span>

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { syntaxTree } from "@codemirror/language";
 import { Circle, CircleCheck, CircleDot, Link2, ListTree, Network, StickyNote } from "lucide-react";
 
-import { api, type Backlink, type LinkedNode } from "../api";
+import { api, type Backlink, type LinkRole, type LinkedNode } from "../api";
 import { revealGraphNode, useMode } from "../store/mode";
 import { ancestors, noteName, parentDir } from "./paths";
 import { docs, useDocMeta, useKb, type RightView } from "./store";
@@ -163,6 +163,13 @@ const STATUS_ICON = {
   done: <CircleCheck size={13} />,
 };
 
+/** Роль ссылки в строке «Нод графа» (ТЗ §4.11); у ноды-заметки — без подписи. */
+const ROLE_TEXT: Record<LinkRole, string | null> = {
+  note: null,
+  comment: "комментарий к",
+  result: "результат задачи",
+};
+
 /** Ноды графа, привязанные к заметке и к папкам, в которых она лежит. */
 function GraphNodes({ path }: { path: string }) {
   const [groups, setGroups] = useState<{ path: string; nodes: LinkedNode[] }[] | null>(null);
@@ -195,20 +202,27 @@ function GraphNodes({ path }: { path: string }) {
           <div className="kb-section-count">
             {g.path === path ? "Эта заметка" : `Папка «${noteName(g.path)}»`} · {g.nodes.length}
           </div>
-          {g.nodes.map((n) => (
-            <div
-              key={n.id}
-              className={`kb-graph-node status-${n.status ?? "note"}`}
-              title={`${n.spaceName} — перейти в граф`}
-              onClick={() => void revealGraphNode(n)}
-            >
-              <span className="kb-graph-node-icon">
-                {n.kind === "note" ? <StickyNote size={13} /> : STATUS_ICON[n.status ?? "todo"]}
-              </span>
-              <span className="kb-graph-node-title">{n.title || "Без названия"}</span>
-              <span className="kb-graph-node-space">{n.spaceName}</span>
-            </div>
-          ))}
+          {g.nodes.map((n) => {
+            const role = ROLE_TEXT[n.role];
+            const title = n.title || "Без названия";
+            return (
+              <div
+                key={`${n.id}:${n.role}`}
+                className={`kb-graph-node status-${n.status ?? "note"} role-${n.role}`}
+                title={`${role ? `${role[0].toUpperCase()}${role.slice(1)} «${title}»` : title} · ${n.spaceName} — перейти в граф`}
+                onClick={() => void revealGraphNode(n)}
+              >
+                <span className="kb-graph-node-icon">
+                  {n.kind === "note" ? <StickyNote size={13} /> : STATUS_ICON[n.status ?? "todo"]}
+                </span>
+                <span className="kb-graph-node-title">
+                  {role && <span className="kb-graph-node-role">{role} </span>}
+                  {title}
+                </span>
+                <span className="kb-graph-node-space">{n.spaceName}</span>
+              </div>
+            );
+          })}
         </div>
       ))}
     </div>

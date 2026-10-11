@@ -10,7 +10,16 @@ import { useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 
-import { api, APP_STATE, VAULT_EVENT, type KbStat, type VaultEvent } from "../api";
+import {
+  api,
+  APP_STATE,
+  DEFAULT_COMMENT_FOLDER,
+  DEFAULT_RESULT_FOLDER,
+  VAULT_EVENT,
+  type KbStat,
+  type LinkRole,
+  type VaultEvent,
+} from "../api";
 import { useGraph } from "./graph";
 import { useMode } from "./mode";
 
@@ -19,16 +28,32 @@ const REFRESH_MS = 150;
 interface KbLinksState {
   /** Известные состояния путей. Нет ключа — ещё не запрошен. */
   stats: Record<string, KbStat>;
-  /** Папка для новых заметок/папок из графа (`kb.default_folder`, "" — корень). */
-  defaultFolder: string;
+  /**
+   * Папки по умолчанию для новых заметок/папок из графа по роли ссылки ("" —
+   * корень): нода-заметка — `kb.default_folder`, «Комментарий» —
+   * `kb.default_comment_folder`, «Результат» — `kb.default_result_folder`.
+   * Сами папки выбирает Rust (`kb_create_target(role)`); здесь — для настроек.
+   */
+  folders: Record<LinkRole, string>;
 
   init: () => Promise<void>;
   /** Запросить состояние путей, которых ещё нет в кэше (пакетом). */
   request: (paths: string[]) => void;
   /** Перечитать все известные пути (с дебаунсом). */
   refresh: () => void;
-  setDefaultFolder: (dir: string) => Promise<void>;
+  setFolder: (role: LinkRole, dir: string) => Promise<void>;
 }
+
+const FOLDER_KEYS: Record<LinkRole, string> = {
+  note: APP_STATE.kbDefaultFolder,
+  comment: APP_STATE.kbCommentFolder,
+  result: APP_STATE.kbResultFolder,
+};
+const FOLDER_DEFAULTS: Record<LinkRole, string> = {
+  note: "",
+  comment: DEFAULT_COMMENT_FOLDER,
+  result: DEFAULT_RESULT_FOLDER,
+};
 
 const pending = new Set<string>();
 let requestTimer: ReturnType<typeof setTimeout> | undefined;
@@ -52,15 +77,19 @@ export const useKbLinks = create<KbLinksState>()((set, get) => {
 
   return {
     stats: {},
-    defaultFolder: "",
+    folders: { ...FOLDER_DEFAULTS },
 
     init: () => {
       initPromise ??= (async () => {
-        try {
-          set({ defaultFolder: (await api.getAppState(APP_STATE.kbDefaultFolder)) ?? "" });
-        } catch {
-          // не критично: корень vault
+        const folders = { ...FOLDER_DEFAULTS };
+        for (const role of Object.keys(FOLDER_KEYS) as LinkRole[]) {
+          try {
+            folders[role] = (await api.getAppState(FOLDER_KEYS[role])) ?? FOLDER_DEFAULTS[role];
+          } catch {
+            // не критично: папка по умолчанию
+          }
         }
+        set({ folders });
         await listen<VaultEvent[]>(VAULT_EVENT, (e) => onVaultEvents(e.payload));
         // Сменили папку vault в настройках — все ссылки перепроверить.
         useMode.subscribe((s, prev) => {
@@ -87,10 +116,10 @@ export const useKbLinks = create<KbLinksState>()((set, get) => {
       refreshTimer = setTimeout(() => void fetch(Object.keys(get().stats)), REFRESH_MS);
     },
 
-    setDefaultFolder: async (dir) => {
-      set({ defaultFolder: dir });
+    setFolder: async (role, dir) => {
+      set((s) => ({ folders: { ...s.folders, [role]: dir } }));
       try {
-        await api.setAppState(APP_STATE.kbDefaultFolder, dir);
+        await api.setAppState(FOLDER_KEYS[role], dir);
       } catch (e) {
         useGraph.getState().showError(e);
       }

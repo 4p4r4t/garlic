@@ -1939,3 +1939,61 @@ button.kb-link.is-path.is-note:hover {
 .g-note .note-preview {
   -webkit-line-clamp: 3;
 }
+
+/* ================= M5.3: «Комментарий» и «Результат» у задачи (ТЗ §4.11) ================= */
+
+/* три раздела задачи: название, затем две строки-ссылки «метка | поле», затем низ */
+.task-links {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.task-links .kb-link-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-links .kb-link-label {
+  flex: none;
+  width: 84px;
+  margin: 0;
+  font-size: 10.5px;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.task-links .kb-link-label svg {
+  flex: none;
+}
+
+.task-links .kb-link {
+  flex: 0 1 auto;
+  max-width: calc(100% - 84px);
+  margin: 0 0 0 -6px;
+}
+
+.task-links .role-result .kb-link-label {
+  color: var(--node-muted);
+}
+
+/* настройки: папки по умолчанию по роли ссылки — строка «подпись | кнопка» */
+.st-folder-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.st-folder-row .st-subtitle {
+  margin: 0;
+}
+
+.st-folder-row .st-folder-btn {
+  max-width: 150px;
+}

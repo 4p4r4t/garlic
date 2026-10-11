@@ -5,10 +5,10 @@ import { memo } from "react";
 import type { NodeProps } from "@xyflow/react";
 import { StickyNote } from "lucide-react";
 
-import type { TaskStatus } from "../api";
+import type { NodeModel, TaskStatus } from "../api";
 import type { FlowNode, Progress } from "../canvas/flow";
 import { NodeHandles } from "../canvas/NodeHandles";
-import { NOTE_FILE, TASK_LINK } from "../canvas/kbLink";
+import { COMMENT_LINK, NOTE_FILE, RESULT_LINK } from "../canvas/kbLink";
 import { KbLinkField } from "../canvas/KbLinkField";
 import { PlainTitle, ProgressBadge, StatusIcon, STATUS_META } from "../canvas/NodeParts";
 import { fillStyle, nodeFillColor } from "../canvas/palette";
@@ -33,7 +33,7 @@ function AnchorNodeImpl({ data }: NodeProps<FlowNode>) {
     >
       <NodeHandles />
       <PlainTitle model={m} placeholder="Без названия" />
-      <KbLinkField slot={TASK_LINK} path={m.kbPath} title={m.title} />
+      <TaskLinks model={m} />
       <TaskFoot status={status} progress={data.progress} />
     </div>
   );
@@ -70,8 +70,18 @@ function GhostNodeImpl({ data }: NodeProps<FlowNode>) {
     >
       <NodeHandles inert />
       <PlainTitle model={m} placeholder="Без названия" />
-      <KbLinkField slot={TASK_LINK} path={m.kbPath} title={m.title} />
+      <TaskLinks model={m} />
       <TaskFoot status={status} progress={data.progress} />
+    </div>
+  );
+}
+
+/** «Комментарий» и «Результат» задачи — только картинка (как в TaskNode). */
+function TaskLinks({ model: m }: { model: NodeModel }) {
+  return (
+    <div className="task-links">
+      <KbLinkField slot={COMMENT_LINK} path={m.kbPath} title={m.title} />
+      <KbLinkField slot={RESULT_LINK} path={m.kbResultPath} title={m.title} />
     </div>
   );
 }

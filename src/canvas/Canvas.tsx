@@ -95,8 +95,15 @@ interface HoverTip {
   text: string;
 }
 
-/** Размер новой ноды (.g-node: 240 × min 90, ТЗ §4.3) — для её размещения. */
-const NEW_NODE_SIZE = { w: 240, h: 90 };
+/**
+ * Размер новой ноды — для её размещения у конца стрелки. Заметка — .g-node
+ * 240 × min 90 (ТЗ §4.3); задача выше: название + «Комментарий» + «Результат»
+ * + низ (ТЗ §4.11, однострочное название).
+ */
+const NEW_NODE_SIZE: Record<NodeKind, { w: number; h: number }> = {
+  task: { w: 240, h: 112 },
+  note: { w: 240, h: 90 },
+};
 
 /** Ближайшая к точке сторона прямоугольника — для стрелки, брошенной на тело ноды. */
 function nearestSide(rect: DOMRect, x: number, y: number): HandleSide {
@@ -118,8 +125,8 @@ function sideToward(at: XYPosition, from: XYPosition): HandleSide {
 }
 
 /** Левый верхний угол новой ноды — так, чтобы середина стороны `side` пришлась на `at`. */
-function placeBySide(at: XYPosition, side: HandleSide): XYPosition {
-  const { w, h } = NEW_NODE_SIZE;
+function placeBySide(at: XYPosition, side: HandleSide, kind: NodeKind): XYPosition {
+  const { w, h } = NEW_NODE_SIZE[kind];
   switch (side) {
     case "left":
       return { x: at.x, y: at.y - h / 2 };
@@ -301,7 +308,7 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
         void createConnectedNode(
           canvasId,
           kind,
-          placeBySide(menu.flow, from.side),
+          placeBySide(menu.flow, from.side, kind),
           { nodeId: from.nodeId, handle: from.handle },
           from.side,
         );

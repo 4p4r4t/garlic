@@ -11,6 +11,7 @@ import type {
   CanvasData,
   EdgeModel,
   KbStat,
+  LinkRole,
   LinkTarget,
   LinkedNode,
   NewEdge,
@@ -19,6 +20,7 @@ import type {
   NodePatch,
   NodePosition,
   NoteFile,
+  ResultLink,
   SearchHit,
   Space,
   SpaceTask,
@@ -55,7 +57,15 @@ export const APP_STATE = {
   vaultPath: "kb.vault_path",
   /** Папка по умолчанию для новых заметок из графа (M5.2), путь в vault. */
   kbDefaultFolder: "kb.default_folder",
+  /** Папка для новых «Комментариев» задач (M5.3); нет — `Задачи`. */
+  kbCommentFolder: "kb.default_comment_folder",
+  /** Папка для новых «Результатов» задач (M5.3); нет — `Результаты`. */
+  kbResultFolder: "kb.default_result_folder",
 } as const;
+
+/** Папки по умолчанию, пока не заданы в настройках (зеркало kblink.rs). */
+export const DEFAULT_COMMENT_FOLDER = "Задачи";
+export const DEFAULT_RESULT_FOLDER = "Результаты";
 
 /** Tauri-событие watcher'а с пачкой `VaultEvent[]`. */
 export const VAULT_EVENT = "vault:changed";
@@ -126,13 +136,18 @@ export const api = {
     rawInvoke<SearchHit[]>("vault_search", { query, limit: limit ?? null }),
   vaultBacklinks: (path: string) => rawInvoke<Backlink[]>("vault_backlinks", { path }),
   vaultAbsPath: (path: string) => rawInvoke<string>("vault_abs_path", { path }),
-  /** Ноды всех пространств с kb_path == path. */
+  /** Ноды всех пространств, привязанные к path (с ролью ссылки). */
   kbLinkedNodes: (path: string) => invoke<LinkedNode[]>("kb_linked_nodes", { path }),
+  /** Все «Результаты» задач (фильтр проводника, ТЗ §4.11). */
+  kbResultLinks: () => invoke<ResultLink[]>("kb_result_links"),
 
   // ссылки нод (ТЗ §4.10, M5.2): операции с путём, запись в ноду — updateNode.
-  /** Новая заметка/папка для поля-ссылки в `dir` (null — папка по умолчанию; создаётся) → путь. */
-  kbCreateTarget: (kind: LinkTarget, dir: string | null, name: string) =>
-    invokeVault<string>("kb_create_target", { kind, dir, name }),
+  /**
+   * Новая заметка/папка для поля-ссылки в `dir` (null — папка по умолчанию для
+   * роли `role`; создаётся) → путь.
+   */
+  kbCreateTarget: (kind: LinkTarget, dir: string | null, name: string, role: LinkRole = "note") =>
+    invokeVault<string>("kb_create_target", { kind, dir, name, role }),
   /** «Заметка → папка»: папка рядом с заметкой, заметка внутрь, ссылки нод переписаны → путь папки. */
   kbNoteToFolder: (path: string, folderName: string) =>
     invokeVault<string>("kb_note_to_folder", { path, folderName }),

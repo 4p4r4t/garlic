@@ -40,8 +40,13 @@ export interface NodeModel {
   y: number;
   width: number | null;
   height: number | null;
-  /** Ссылка на заметку/папку базы знаний: путь относительно vault (`/`), ТЗ §4.10. */
+  /**
+   * Ссылка на заметку/папку базы знаний: путь относительно vault (`/`), ТЗ §4.10.
+   * У задачи — «Комментарий» (ТЗ §4.11), у заметки — её собственный .md.
+   */
   kbPath: string | null;
+  /** «Результат» задачи (ТЗ §4.11); у заметок всегда null. */
+  kbResultPath: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -102,6 +107,8 @@ export interface NodePatch {
   height?: number | null;
   /** Путь в vault (`a/b.md` или папка `a/b`); null — отвязать. */
   kbPath?: string | null;
+  /** «Результат» задачи; null — отвязать. У заметки — ошибка. */
+  kbResultPath?: string | null;
 }
 
 export interface NodePosition {
@@ -194,6 +201,12 @@ export interface VaultInfo {
   error: string | null;
 }
 
+/**
+ * Роль ссылки ноды (ТЗ §4.11): файл ноды-заметки, «Комментарий» задачи
+ * (`kbPath`) или «Результат» задачи (`kbResultPath`).
+ */
+export type LinkRole = "note" | "comment" | "result";
+
 /** Нода, привязанная к заметке/папке (`kb_linked_nodes`). */
 export interface LinkedNode {
   id: string;
@@ -203,6 +216,24 @@ export interface LinkedNode {
   spaceId: string;
   spaceName: string;
   /** Холсты от корневого холста пространства до холста ноды — аргумент `revealNode`. */
+  canvasChain: string[];
+  /** Роль ссылки; задача с обеими ролями на этом пути приходит двумя записями. */
+  role: LinkRole;
+}
+
+/** «Результат» задачи для фильтра проводника (`kb_result_links`, ТЗ §4.11). */
+export interface ResultLink {
+  /** Путь результата (заметка или папка). */
+  path: string;
+  /** Задача-владелец. */
+  id: string;
+  title: string;
+  status: TaskStatus;
+  spaceId: string;
+  spaceName: string;
+  /** Заголовки задач-предков от корня пространства (без самой задачи). */
+  parents: string[];
+  /** Холсты от корневого до холста задачи — аргумент `revealNode`. */
   canvasChain: string[];
 }
 

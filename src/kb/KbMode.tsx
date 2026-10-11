@@ -8,11 +8,13 @@ import { listen } from "@tauri-apps/api/event";
 import { FileSearch, Files, PanelLeft, PanelRight, Search } from "lucide-react";
 
 import { VAULT_EVENT, type VaultEvent } from "../api";
+import { useGraph } from "../store/graph";
 import { useMode } from "../store/mode";
 import { Explorer } from "./Explorer";
 import { NoteArea, TabBar } from "./NoteArea";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { RightPanel } from "./RightPanel";
+import { useResults } from "./results";
 import { SearchView } from "./SearchView";
 import { docs, flushAllDocs, useKb } from "./store";
 import "./kb.css";
@@ -53,6 +55,31 @@ export default function KbMode({ active }: { active: boolean }) {
       off?.();
     };
   }, []);
+
+  // Фильтр «только результаты» (ТЗ §4.11): список результатов живой — пока
+  // фильтр включён, перечитывается при смене дерева vault (watcher, действия в
+  // «Базе»), кэша графа (ссылки, статусы, удаление задач, пространства) и при
+  // входе в режим.
+  useEffect(() => {
+    const refresh = () => {
+      if (useKb.getState().resultsOnly) useResults.getState().refresh();
+    };
+    const offKb = useKb.subscribe((s, p) => {
+      if (s.resultsOnly && !p.resultsOnly) void useResults.getState().load();
+      else if (s.tree !== p.tree) refresh();
+    });
+    const offGraph = useGraph.subscribe((s, p) => {
+      if (s.canvases !== p.canvases || s.subtree !== p.subtree || s.spaces !== p.spaces) refresh();
+    });
+    if (useKb.getState().resultsOnly) void useResults.getState().load();
+    return () => {
+      offKb();
+      offGraph();
+    };
+  }, []);
+  useEffect(() => {
+    if (active && useKb.getState().resultsOnly) void useResults.getState().load();
+  }, [active]);
 
   // Запросы из графа (M5.2): открыть заметку / показать папку.
   useEffect(() => {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Ban, Folder, FolderOpen, Home } from "lucide-react";
 
-import { api, type TaskStatus, type VaultInfo } from "../api";
+import { api, type LinkRole, type TaskStatus, type VaultInfo } from "../api";
 import { KbPicker } from "../canvas/KbPicker";
 import { StatusIcon, STATUS_META } from "../canvas/NodeParts";
 import { PALETTE } from "../canvas/palette";
@@ -159,31 +159,60 @@ function VaultSetting() {
   );
 }
 
-/** Папка для заметок и папок, создаваемых из графа (поле-ссылка, нода-заметка). */
+const FOLDER_ROWS: { role: LinkRole; label: string; hint: string; picker: string }[] = [
+  {
+    role: "note",
+    label: "Новые заметки из графа",
+    hint: "Папка, в которой создаются файлы нод-заметок",
+    picker: "Папка для новых заметок",
+  },
+  {
+    role: "comment",
+    label: "«Комментарии» задач",
+    hint: "Папка, в которой создаются заметки и папки поля «Комментарий» (создаётся при первом использовании)",
+    picker: "Папка для комментариев",
+  },
+  {
+    role: "result",
+    label: "«Результаты» задач",
+    hint: "Папка, в которой создаются заметки и папки поля «Результат» (создаётся при первом использовании)",
+    picker: "Папка для результатов",
+  },
+];
+
+/** Папки, в которых создаётся новое из графа: по роли ссылки (ТЗ §4.10, §4.11). */
 function DefaultFolderSetting() {
-  const folder = useKbLinks((s) => s.defaultFolder);
-  const setFolder = useKbLinks((s) => s.setDefaultFolder);
-  const [picking, setPicking] = useState(false);
-  const close = useCallback(() => setPicking(false), []);
+  const folders = useKbLinks((s) => s.folders);
+  const setFolder = useKbLinks((s) => s.setFolder);
+  const [picking, setPicking] = useState<LinkRole | null>(null);
+  const close = useCallback(() => setPicking(null), []);
+  const row = FOLDER_ROWS.find((r) => r.role === picking);
   return (
     <div className="st-folder">
-      <div className="st-subtitle">Новые заметки из графа</div>
-      <button
-        type="button"
-        className="st-btn st-folder-btn"
-        title="Папка, в которой создаются заметки и папки из графа"
-        onClick={() => setPicking(true)}
-      >
-        {folder ? <Folder size={13} /> : <Home size={13} />}
-        <span>{folder || "Корень базы"}</span>
-      </button>
-      {picking && (
+      {FOLDER_ROWS.map((r) => {
+        const folder = folders[r.role];
+        return (
+          <div key={r.role} className="st-folder-row">
+            <div className="st-subtitle">{r.label}</div>
+            <button
+              type="button"
+              className="st-btn st-folder-btn"
+              title={r.hint}
+              onClick={() => setPicking(r.role)}
+            >
+              {folder ? <Folder size={13} /> : <Home size={13} />}
+              <span>{folder || "Корень базы"}</span>
+            </button>
+          </div>
+        );
+      })}
+      {row && (
         <KbPicker
-          title="Папка для новых заметок"
+          title={row.picker}
           filter="folders"
           includeRoot
-          current={folder}
-          onPick={(p) => void setFolder(p)}
+          current={folders[row.role]}
+          onPick={(p) => void setFolder(row.role, p)}
           onClose={close}
         />
       )}
