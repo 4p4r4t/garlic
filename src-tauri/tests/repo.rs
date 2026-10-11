@@ -458,3 +458,128 @@ fn spaces_panel_rules() {
         Err(AppError::Invalid(_))
     ));
 }
+
+fn set_status(conn: &Connection, id: &str, status: TaskStatus) {
+    nodes::update(
+        conn,
+        id,
+        &NodePatch {
+            status: Some(Some(status)),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn progress_counts_direct_subtasks_only() {
+    let (conn, root) = setup();
+    let a = node(&conn, &root, NodeKind::Task, "A");
+    let empty = node(&conn, &root, NodeKind::Task, "empty");
+    node(&conn, &root, NodeKind::Task, "plain");
+
+    // У A: 3 задачи (2 done) + заметка; у подзадачи A1 — ещё 2 задачи.
+    let ca = canvases::get_or_create_child(&conn, &a).unwrap();
+    let a1 = node(&conn, &ca.id, NodeKind::Task, "A1");
+    let a2 = node(&conn, &ca.id, NodeKind::Task, "A2");
+    node(&conn, &ca.id, NodeKind::Task, "A3");
+    node(&conn, &ca.id, NodeKind::Note, "note");
+    set_status(&conn, &a1, TaskStatus::Done);
+    set_status(&conn, &a2, TaskStatus::Done);
+    let ca1 = canvases::get_or_create_child(&conn, &a1).unwrap();
+    node(&conn, &ca1.id, NodeKind::Task, "A1a");
+    node(&conn, &ca1.id, NodeKind::Task, "A1b");
+    // Пустой вложенный холст — без бейджа.
+    canvases::get_or_create_child(&conn, &empty).unwrap();
+
+    let data = canvases::load(&conn, &root).unwrap();
+    assert_eq!(data.progress.len(), 1);
+    let p = &data.progress[0];
+    assert_eq!((p.node_id.as_str(), p.done, p.total), (a.as_str(), 2, 3));
+
+    let inner = canvases::load(&conn, &ca.id).unwrap();
+    assert_eq!(inner.progress.len(), 1);
+    assert_eq!(
+        (
+            inner.progress[0].node_id.as_str(),
+            inner.progress[0].done,
+            inner.progress[0].total
+        ),
+        (a1.as_str(), 0, 2)
+    );
+
+    // Статус меняется — прогресс тоже.
+    set_status(&conn, &a2, TaskStatus::InProgress);
+    let p = &canvases::load(&conn, &root).unwrap().progress[0];
+    assert_eq!((p.done, p.total), (1, 3));
+}
+
+#[test]
+fn load_subtree_returns_levels_with_paths_up_to_depth() {
+    let (conn, root) = setup();
+    let a = node(&conn, &root, NodeKind::Task, "Задача A");
+    let b = node(&conn, &root, NodeKind::Task, "Задача B");
+    let ca = canvases::get_or_create_child(&conn, &a).unwrap();
+    let a1 = node(&conn, &ca.id, NodeKind::Task, "Подзадача A1");
+    let a2 = node(&conn, &ca.id, NodeKind::Note, "Заметка A2");
+    edge(&conn, &ca.id, &a, &a1).unwrap(); // якорь → подзадача
+    edge(&conn, &ca.id, &a1, &a2).unwrap();
+    let ca1 = canvases::get_or_create_child(&conn, &a1).unwrap();
+    let a1x = node(&conn, &ca1.id, NodeKind::Task, "Глубже");
+    let ca1x = canvases::get_or_create_child(&conn, &a1x).unwrap();
+    let deepest = node(&conn, &ca1x.id, NodeKind::Task, "Самое дно");
+    let cb = canvases::get_or_create_child(&conn, &b).unwrap();
+    node(&conn, &cb.id, NodeKind::Task, "Подзадача B1");
+
+    // Другое пространство не протекает.
+    let other = spaces::create(&conn, "Другое").unwrap();
+    let foreign = node(&conn, &other.root_canvas, NodeKind::Task, "чужая");
+    let cf = canvases::get_or_create_child(&conn, &foreign).unwrap();
+    node(&conn, &cf.id, NodeKind::Task, "чужая подзадача");
+
+    let all = canvases::load_subtree(&conn, &root, 10).unwrap();
+    let ids: Vec<&str> = all.iter().map(|l| l.canvas.id.as_str()).collect();
+    assert_eq!(all.len(), 4);
+    assert!(!ids.contains(&cf.id.as_str()));
+    assert!(all.windows(2).all(|w| w[0].depth <= w[1].depth));
+
+    let la = all.iter().find(|l| l.canvas.id == ca.id).unwrap();
+    assert_eq!(la.depth, 1);
+    assert_eq!(la.canvas.owner_node.as_deref(), Some(a.as_str()));
+    assert_eq!(la.path, vec!["Задача A".to_string()]);
+    assert_eq!(la.nodes.len(), 2);
+    assert_eq!(la.edges.len(), 2);
+    assert_eq!(la.progress.len(), 1); // у A1 есть подзадача
+    let l1x = all.iter().find(|l| l.canvas.id == ca1x.id).unwrap();
+    assert_eq!(l1x.depth, 3);
+    assert_eq!(l1x.path, vec!["Задача A", "Подзадача A1", "Глубже"]);
+    assert_eq!(l1x.nodes[0].id, deepest);
+
+    // Ограничение глубины.
+    let two = canvases::load_subtree(&conn, &root, 2).unwrap();
+    assert_eq!(two.len(), 3);
+    assert!(two.iter().all(|l| l.depth <= 2));
+    assert!(canvases::load_subtree(&conn, &root, 0).unwrap().is_empty());
+
+    // Из слоя: глубина и путь считаются от него.
+    let from_a = canvases::load_subtree(&conn, &ca.id, 3).unwrap();
+    assert_eq!(from_a.len(), 2);
+    assert_eq!(from_a[0].canvas.id, ca1.id);
+    assert_eq!(from_a[0].depth, 1);
+    assert_eq!(from_a[0].path, vec!["Подзадача A1".to_string()]);
+
+    // Лист и неизвестный холст.
+    assert!(canvases::load_subtree(&conn, &ca1x.id, 3)
+        .unwrap()
+        .is_empty());
+    assert!(matches!(
+        canvases::load_subtree(&conn, "nope", 3),
+        Err(AppError::NotFound(_))
+    ));
+
+    // Удаление задачи уносит её поддерево.
+    nodes::delete_many(&conn, std::slice::from_ref(&a)).unwrap();
+    let rest = canvases::load_subtree(&conn, &root, 10).unwrap();
+    assert_eq!(rest.len(), 1);
+    assert_eq!(rest[0].canvas.id, cb.id);
+}

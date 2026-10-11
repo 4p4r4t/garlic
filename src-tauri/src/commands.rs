@@ -8,7 +8,8 @@ use tauri::State;
 
 use crate::error::{AppError, AppResult};
 use crate::model::{
-    Canvas, CanvasData, Edge, NewEdge, NewNode, Node, NodePatch, NodePosition, Space, Viewport,
+    Canvas, CanvasData, Edge, NewEdge, NewNode, Node, NodePatch, NodePosition, Space, SubtreeLevel,
+    Viewport,
 };
 use crate::repo;
 
@@ -52,6 +53,15 @@ pub async fn delete_space(db: Cmd<'_>, id: String) -> AppResult<()> {
 #[tauri::command]
 pub async fn load_canvas(db: Cmd<'_>, canvas_id: String) -> AppResult<CanvasData> {
     repo::canvases::load(&*db.conn()?, &canvas_id)
+}
+
+#[tauri::command]
+pub async fn load_subtree(
+    db: Cmd<'_>,
+    canvas_id: String,
+    max_depth: u32,
+) -> AppResult<Vec<SubtreeLevel>> {
+    repo::canvases::load_subtree(&*db.conn()?, &canvas_id, max_depth)
 }
 
 #[tauri::command]

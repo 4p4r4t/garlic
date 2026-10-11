@@ -4,17 +4,13 @@ import { StickyNote } from "lucide-react";
 
 import type { FlowNode } from "./flow";
 import { NodeHandles } from "./NodeHandles";
+import { notePreview } from "./NodeParts";
 import { NodeTitle } from "./NodeTitle";
 import { fillStyle } from "./palette";
 
-/** Превью первых строк тела заметки (редактор Markdown — M5). */
-function preview(body: string): string {
-  return body.split("\n").filter((l) => l.trim()).slice(0, 3).join("\n");
-}
-
 function NoteNodeImpl({ data, selected }: NodeProps<FlowNode>) {
   const m = data.model;
-  const text = preview(m.body);
+  const text = notePreview(m.body);
   return (
     <div
       className={`g-node g-note${selected ? " is-selected" : ""}${m.color ? " is-filled" : ""}`}

@@ -3,6 +3,7 @@
 :root {
   --bg: #141518;
   --grid-dot: #33363f;
+  --grid-dot-layer: #2a2d35;
   --topbar-bg: #17181c;
   --border: #26282f;
 
@@ -316,8 +317,59 @@ button {
   min-width: 0;
 }
 
+.tb-crumbs {
+  overflow: hidden;
+}
+
+.crumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.crumb-sep {
+  flex: none;
+  color: var(--faint);
+}
+
+.crumb {
+  max-width: 220px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+button.crumb {
+  cursor: pointer;
+}
+
+button.crumb:hover {
+  background: var(--menu-hover);
+  color: var(--fg);
+}
+
 .crumb.is-current {
   color: var(--fg);
+  font-weight: 500;
+}
+
+.tb-space-name.is-link {
+  cursor: pointer;
+  color: var(--muted);
+}
+.tb-space-name.is-link:hover {
+  color: var(--fg);
+}
+
+.tb-icon.is-on {
+  color: var(--accent);
 }
 
 .tb-spacer {
@@ -729,4 +781,190 @@ button {
   fill: var(--bg);
   stroke: var(--edge);
   stroke-width: 1.5;
+}
+
+/* ---------- слои подзадач (ТЗ §4.5) ---------- */
+
+.layer-stack {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.layer-level {
+  position: absolute;
+  inset: 0;
+  transition:
+    filter 200ms ease-out,
+    opacity 200ms ease-out;
+}
+
+/* нижние уровни: размыты, без событий (RF ставит нодам pointer-events инлайном) */
+.layer-level.is-under {
+  filter: blur(1.5px) saturate(0.8);
+}
+.layer-level.under-2 {
+  filter: blur(2.2px) saturate(0.7);
+}
+.layer-level.under-3 {
+  filter: blur(3px) saturate(0.6);
+}
+.layer-level.is-under *,
+.layer-level.is-leaving * {
+  pointer-events: none !important;
+}
+
+/* закрываемый слой гаснет (обратная анимация) */
+.layer-level.is-leaving {
+  opacity: 0;
+}
+
+/* тинт между уровнями: глубже под стеком — темнее (тинты складываются) */
+.layer-tint {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(10, 11, 17, 0.6);
+  animation: layer-fade-in 200ms ease-out;
+  transition: opacity 200ms ease-out;
+}
+.layer-tint.is-leaving {
+  opacity: 0;
+}
+
+/* у слоёв фон прозрачный — под ними видно затемнённые уровни */
+.react-flow.is-layer {
+  --xy-background-color: transparent;
+}
+
+/* только что открытый слой проявляется; якорь — нет, он «остаётся как был» */
+.layer-level.is-entering .react-flow__node:not(.react-flow__node-anchor),
+.layer-level.is-entering .react-flow__edge {
+  animation: layer-fade-in 200ms ease-out;
+}
+
+@keyframes layer-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* нода-родитель на нижнем уровне: её рисует слой (якорь) — прячем с задержкой,
+   чтобы не мигнула, пока якорь ещё не измерен */
+.react-flow__node.is-covered {
+  opacity: 0;
+  transition: opacity 0s linear 160ms;
+}
+
+/* нода-родитель поверх тинта */
+.g-node.is-anchor {
+  cursor: pointer;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------- бейдж прогресса подзадач ---------- */
+
+.progress-badge {
+  flex: none;
+  align-self: center;
+  margin: -1px -4px -1px 2px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--node-muted);
+  font-size: 11px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.progress-badge.nodrag {
+  cursor: pointer;
+}
+
+.progress-badge.nodrag:hover {
+  background: rgba(255, 255, 255, 0.13);
+  color: var(--node-fg);
+}
+
+.progress-badge.is-complete {
+  background: rgba(111, 191, 115, 0.14);
+  color: #7fca83;
+}
+
+.g-node.is-filled .progress-badge {
+  background: rgba(0, 0, 0, 0.16);
+  color: inherit;
+}
+
+/* ---------- просвечивающие уровни (ТЗ §4.5.1) ---------- */
+/* непрозрачность по глубине — зеркало GHOST_OPACITY в layers/extras.ts */
+
+.react-flow__node.ghost-d1,
+.react-flow__edge.ghost-d1 {
+  opacity: 0.55;
+}
+.react-flow__node.ghost-d2,
+.react-flow__edge.ghost-d2 {
+  opacity: 0.3;
+}
+.react-flow__node.ghost-d3,
+.react-flow__edge.ghost-d3 {
+  opacity: 0.15;
+}
+
+.react-flow__handle.g-handle.is-inert,
+.react-flow__node:hover .g-handle.is-inert,
+.is-connecting .g-handle.is-inert {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.react-flow__edge.is-ghost {
+  pointer-events: none;
+}
+
+.react-flow__node-ghost {
+  cursor: pointer;
+  animation: layer-fade-in 200ms ease-out;
+  transition: opacity 120ms;
+}
+
+.react-flow__node-ghost .g-node {
+  box-shadow: none;
+}
+
+.react-flow__node-ghost.ghost-d1:hover {
+  opacity: 0.9;
+}
+.react-flow__node-ghost.ghost-d2:hover {
+  opacity: 0.7;
+}
+.react-flow__node-ghost.ghost-d3:hover {
+  opacity: 0.55;
+}
+
+.react-flow__node-ghost:hover .g-node {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.ghost-tip {
+  position: fixed;
+  z-index: 45;
+  max-width: min(520px, 70vw);
+  padding: 4px 9px;
+  transform: translate(-50%, calc(-100% - 8px));
+  background: var(--menu-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  color: var(--fg);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }

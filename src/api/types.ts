@@ -54,10 +54,32 @@ export interface EdgeModel {
   label: string | null;
 }
 
+/** Прогресс подзадач: задачи прямого вложенного холста (`done` из `total`). */
+export interface NodeProgress {
+  nodeId: string;
+  done: number;
+  total: number;
+}
+
 export interface CanvasData {
   canvas: Canvas;
   nodes: NodeModel[];
   edges: EdgeModel[];
+  /** Только задачи, у которых в прямом вложенном холсте есть задачи. */
+  progress: NodeProgress[];
+}
+
+/** Один вложенный холст поддерева (`load_subtree`, ТЗ §4.5.1). */
+export interface SubtreeLevel {
+  /** `canvas.ownerNode` — задача-владелец уровнем выше. */
+  canvas: Canvas;
+  /** 1 — прямые подзадачи нод исходного холста, 2 — их подзадачи, … */
+  depth: number;
+  /** Заголовки задач-владельцев от исходного холста: ["Задача A", "Подзадача B"]. */
+  path: string[];
+  nodes: NodeModel[];
+  edges: EdgeModel[];
+  progress: NodeProgress[];
 }
 
 export interface NewNode {

@@ -1,7 +1,6 @@
 import { useEffect } from "react";
-import { ReactFlowProvider } from "@xyflow/react";
 
-import { FlowCanvas } from "./canvas/Canvas";
+import { LayerStack } from "./layers/LayerStack";
 import { useGraph } from "./store/graph";
 import { Topbar } from "./topbar/Topbar";
 
@@ -11,8 +10,6 @@ export default function App() {
   const toast = useGraph((s) => s.toast);
   const dismissToast = useGraph((s) => s.dismissToast);
   const init = useGraph((s) => s.init);
-  // Активный холст — вершина стека слоёв. M3 будет рисовать стек с тинтом.
-  const activeCanvas = useGraph((s) => s.layers[s.layers.length - 1]);
 
   useEffect(() => {
     void init();
@@ -22,10 +19,8 @@ export default function App() {
     <div className="app">
       <Topbar />
       <main className="canvas-area">
-        {phase === "ready" && activeCanvas ? (
-          <ReactFlowProvider key={activeCanvas}>
-            <FlowCanvas canvasId={activeCanvas} />
-          </ReactFlowProvider>
+        {phase === "ready" ? (
+          <LayerStack />
         ) : phase === "error" ? (
           <div className="screen-msg is-error">
             Не удалось открыть данные: {fatal}

@@ -35,6 +35,7 @@ pub fn run() {
             commands::rename_space,
             commands::delete_space,
             commands::load_canvas,
+            commands::load_subtree,
             commands::get_or_create_child_canvas,
             commands::save_viewport,
             commands::create_node,

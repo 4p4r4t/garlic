@@ -131,6 +131,16 @@ pub struct Edge {
     pub label: Option<String>,
 }
 
+/// Прогресс подзадач задачи: задачи (`kind = task`) её **прямого** вложенного
+/// холста — `done` из `total`. Заметки и более глубокие уровни не считаются.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeProgress {
+    pub node_id: String,
+    pub done: i64,
+    pub total: i64,
+}
+
 /// Результат `load_canvas`: всё, что нужно для отрисовки одного холста.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,6 +148,23 @@ pub struct CanvasData {
     pub canvas: Canvas,
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+    /// Прогресс подзадач для нод этого холста (только у задач, где `total > 0`).
+    pub progress: Vec<NodeProgress>,
+}
+
+/// Один вложенный холст поддерева (`load_subtree`) — для «просвечивания» слоёв (ТЗ §4.5.1).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubtreeLevel {
+    /// Холст; `canvas.owner_node` — задача-владелец (лежит на уровень выше).
+    pub canvas: Canvas,
+    /// 1 — прямые подзадачи нод исходного холста, 2 — их подзадачи, …
+    pub depth: u32,
+    /// Заголовки задач-владельцев от исходного холста до этого: `["Задача A", "Подзадача B"]`.
+    pub path: Vec<String>,
+    pub nodes: Vec<Node>,
+    pub edges: Vec<Edge>,
+    pub progress: Vec<NodeProgress>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

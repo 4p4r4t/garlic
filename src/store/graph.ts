@@ -21,10 +21,19 @@ import {
   type NodePatch,
   type NodePosition,
   type Space,
+  type SubtreeLevel,
   type TaskStatus,
   type Viewport,
 } from "../api";
-import { toFlowEdge, toFlowNode, type FlowEdge, type FlowNode } from "../canvas/flow";
+import {
+  progressMap,
+  progressOf,
+  toFlowEdge,
+  toFlowNode,
+  type FlowEdge,
+  type FlowNode,
+} from "../canvas/flow";
+import { viewportBus } from "../layers/viewportBus";
 
 export interface CanvasView {
   canvas: Canvas;
@@ -43,6 +52,15 @@ const MOVE_DEBOUNCE_MS = 300;
 const VIEWPORT_DEBOUNCE_MS = 400;
 const TOAST_MS = 4000;
 
+/** Сколько вложенных уровней просвечивает на текущем холсте (ТЗ §4.5.1). */
+export const SEE_THROUGH_MAX_DEPTH = 3;
+
+/** Поддерево верхнего холста для просвечивания. */
+export interface SubtreeState {
+  canvasId: string;
+  levels: SubtreeLevel[];
+}
+
 export const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
   todo: "in_progress",
   in_progress: "done",
@@ -56,8 +74,12 @@ interface GraphState {
 
   spaces: Space[];
   activeSpaceId: string | null;
-  /** Стек слоёв (id холстов): [корневой, ...вложенные]. Активный — последний. Слои — M3. */
+  /** Стек слоёв (id холстов): [корневой, ...вложенные]. Активный — последний (ТЗ §4.5). */
   layers: string[];
+  /** Вложенные уровни верхнего холста (просвечивание); null — выключено. */
+  subtree: SubtreeState | null;
+  /** Показывать ли вложенные уровни (переключатель в топбаре, app_state.show_nested). */
+  showNested: boolean;
   /** Кэш загруженных холстов. */
   canvases: Record<string, CanvasView>;
   /** Нода, заголовок которой сейчас редактируется. */
@@ -104,18 +126,34 @@ interface GraphState {
   startEditing: (nodeId: string) => void;
   stopEditing: () => void;
 
-  /** Вход в слой подзадач задачи (ТЗ §4.5). Заглушка: реализуется в M3. */
-  enterLayer: (nodeId: string) => void;
+  // --- слои подзадач (M3) ---
+  /** Вход в слой подзадач задачи верхнего холста (ТЗ §4.5). */
+  enterLayer: (nodeId: string) => Promise<void>;
+  /** Выход: уровень `index` стека становится верхним (0 — корневой холст). */
+  exitTo: (index: number) => Promise<void>;
+  /** «Проваливание» в просвечивающую ноду: цепочка слоёв до её холста, нода выделяется. */
+  diveTo: (nodeId: string) => Promise<void>;
+  setShowNested: (show: boolean) => Promise<void>;
 
   showError: (e: unknown) => void;
   dismissToast: () => void;
 }
 
 function toView(data: CanvasData): CanvasView {
+  const progress = progressMap(data.progress);
   return {
     canvas: data.canvas,
-    nodes: data.nodes.map(toFlowNode),
+    nodes: data.nodes.map((m) => toFlowNode(m, progress.get(m.id))),
     edges: data.edges.map(toFlowEdge),
+  };
+}
+
+function deselect(v: CanvasView): CanvasView {
+  if (!v.nodes.some((n) => n.selected) && !v.edges.some((e) => e.selected)) return v;
+  return {
+    ...v,
+    nodes: v.nodes.map((n) => (n.selected ? { ...n, selected: false } : n)),
+    edges: v.edges.map((e) => (e.selected ? { ...e, selected: false } : e)),
   };
 }
 
@@ -126,8 +164,11 @@ const pendingViewports = new Map<string, Viewport>();
 const viewportTimers = new Map<string, ReturnType<typeof setTimeout>>();
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 let initPromise: Promise<void> | null = null;
-/** Номер последнего переключения пространства — поздние ответы старых переключений игнорируются. */
-let switchSeq = 0;
+/**
+ * Номер последней навигации (смена пространства, вход/выход из слоя) —
+ * поздние ответы прежних навигаций игнорируются.
+ */
+let navSeq = 0;
 
 export const useGraph = create<GraphState>()((set, get) => {
   /** Применяет fn к холсту из кэша (если он загружен). */
@@ -140,7 +181,9 @@ export const useGraph = create<GraphState>()((set, get) => {
   const setModel = (canvasId: string, id: string, fn: (m: NodeModel) => NodeModel) =>
     patchView(canvasId, (v) => ({
       ...v,
-      nodes: v.nodes.map((n) => (n.id === id ? { ...n, data: { model: fn(n.data.model) } } : n)),
+      nodes: v.nodes.map((n) =>
+        n.id === id ? { ...n, data: { ...n.data, model: fn(n.data.model) } } : n,
+      ),
     }));
 
   /** Ошибка записи: показать и перечитать холст из БД, чтобы не разойтись с ней. */
@@ -186,6 +229,93 @@ export const useGraph = create<GraphState>()((set, get) => {
     return space?.rootCanvas ?? canvasId;
   };
 
+  const topCanvas = (): string | undefined => {
+    const { layers } = get();
+    return layers[layers.length - 1];
+  };
+
+  /**
+   * Бейдж прогресса задачи-владельца холста canvasId (ТЗ §4.3): пересчитывается
+   * локально из загруженного холста после изменения задач в нём — живое
+   * обновление, пока работаем в слое.
+   */
+  const refreshOwnerProgress = (canvasId: string) => {
+    const s = get();
+    const view = s.canvases[canvasId];
+    const owner = view?.canvas.ownerNode;
+    if (!view || !owner) return;
+    const progress = progressOf(view.nodes);
+    const canvases = { ...s.canvases };
+    let changed = false;
+    for (const [cid, v] of Object.entries(canvases)) {
+      const i = v.nodes.findIndex((n) => n.id === owner);
+      if (i < 0) continue;
+      const n = v.nodes[i];
+      const old = n.data.progress;
+      if (old?.done === progress?.done && old?.total === progress?.total) continue;
+      const nodes = [...v.nodes];
+      const data = { ...n.data, progress };
+      if (!progress) delete data.progress;
+      nodes[i] = { ...n, data };
+      canvases[cid] = { ...v, nodes };
+      changed = true;
+    }
+    if (changed) set({ canvases });
+  };
+
+  const fetchSubtree = async (canvasId: string): Promise<SubtreeState | null> =>
+    get().showNested
+      ? { canvasId, levels: await api.loadSubtree(canvasId, SEE_THROUGH_MAX_DEPTH) }
+      : null;
+
+  /** Перечитать просвечивающие уровни верхнего холста (после удалений, переименований). */
+  const refreshSubtree = async () => {
+    const top = topCanvas();
+    const seq = navSeq;
+    if (!top) return;
+    try {
+      const subtree = await fetchSubtree(top);
+      if (seq === navSeq && topCanvas() === top) set({ subtree });
+    } catch (e) {
+      get().showError(e);
+    }
+  };
+
+  /**
+   * Переход к стеку слоёв `target` (вход, выход, проваливание). Новые уровни
+   * загружаются заново; уровни, уходящие под тинт, теряют выделение
+   * (клавиатура работает только наверху). `select` — выделить ноду наверху.
+   */
+  const navigate = async (target: string[], select?: string) => {
+    const seq = ++navSeq;
+    const { layers, canvases } = get();
+    try {
+      const fresh: Record<string, CanvasView> = {};
+      for (const cid of target) {
+        if (!layers.includes(cid) || !canvases[cid]) {
+          fresh[cid] = toView(await api.loadCanvas(cid));
+        }
+      }
+      const top = target[target.length - 1];
+      const subtree = await fetchSubtree(top);
+      if (seq !== navSeq) return;
+      set((s) => {
+        const next = { ...s.canvases, ...fresh };
+        for (const cid of target.slice(0, -1)) next[cid] = deselect(next[cid]);
+        if (select) {
+          const v = deselect(next[top]);
+          next[top] = {
+            ...v,
+            nodes: v.nodes.map((n) => (n.id === select ? { ...n, selected: true } : n)),
+          };
+        }
+        return { layers: target, canvases: next, subtree, editingNodeId: null };
+      });
+    } catch (e) {
+      get().showError(e);
+    }
+  };
+
   // Лучшее, что можно сделать при закрытии окна: отправить отложенное сразу.
   if (typeof window !== "undefined") {
     window.addEventListener("pagehide", flushAll);
@@ -198,6 +328,8 @@ export const useGraph = create<GraphState>()((set, get) => {
     spaces: [],
     activeSpaceId: null,
     layers: [],
+    subtree: null,
+    showNested: true,
     canvases: {},
     editingNodeId: null,
 
@@ -210,13 +342,18 @@ export const useGraph = create<GraphState>()((set, get) => {
           const saved = await api.getAppState(APP_STATE.activeSpace);
           const space = spaces.find((s) => s.id === saved) ?? spaces[0];
           if (space.id !== saved) await api.setAppState(APP_STATE.activeSpace, space.id);
+          const showNested = (await api.getAppState(APP_STATE.showNested)) !== "0";
+          set({ showNested });
           const data = await api.loadCanvas(space.rootCanvas);
+          const subtree = await fetchSubtree(space.rootCanvas);
+          viewportBus.reset(data.canvas.viewport);
           set({
             phase: "ready",
             spaces,
             activeSpaceId: space.id,
             layers: [space.rootCanvas],
             canvases: { [space.rootCanvas]: toView(data) },
+            subtree,
           });
         } catch (e) {
           set({ phase: "error", fatal: errorMessage(e) });
@@ -244,8 +381,11 @@ export const useGraph = create<GraphState>()((set, get) => {
       try {
         const model = await api.createNode({ canvasId, kind, x: pos.x, y: pos.y });
         patchView(canvasId, (v) => ({ ...v, nodes: [...v.nodes, toFlowNode(model)] }));
-        // Новая задача сразу открывается на редактирование заголовка (ТЗ §4.2).
-        if (kind === "task") set({ editingNodeId: model.id });
+        if (kind === "task") {
+          // Новая задача сразу открывается на редактирование заголовка (ТЗ §4.2).
+          set({ editingNodeId: model.id });
+          refreshOwnerProgress(canvasId);
+        }
         return model;
       } catch (e) {
         get().showError(e);
@@ -267,10 +407,15 @@ export const useGraph = create<GraphState>()((set, get) => {
     updateNode: async (canvasId, id, patch) => {
       // Оптимистично: сразу в UI, при ошибке — перечитать холст.
       setModel(canvasId, id, (m) => ({ ...m, ...patch }));
+      if ("status" in patch) refreshOwnerProgress(canvasId);
       try {
         const fresh = await api.updateNode(id, patch);
         // Позиция живёт в FlowNode.position, поэтому x/y из ответа не мешают.
         setModel(canvasId, id, (m) => ({ ...fresh, x: m.x, y: m.y }));
+        // Пути в тултипах просвечивающих нод содержат заголовки владельцев.
+        if ("title" in patch && canvasId === topCanvas() && get().subtree?.levels.length) {
+          void refreshSubtree();
+        }
       } catch (e) {
         fail(canvasId, e);
       }
@@ -297,6 +442,16 @@ export const useGraph = create<GraphState>()((set, get) => {
     connect: async (canvasId, ends) => {
       const view = get().canvases[canvasId];
       if (!view || ends.source === ends.target) return;
+      // Межуровневая стрелка бывает только «родитель → подзадача» (ТЗ §6):
+      // стрелка, брошенная из подзадачи на ноду-родителя слоя, разворачивается.
+      if (ends.target === view.canvas.ownerNode) {
+        ends = {
+          source: ends.target,
+          target: ends.source,
+          sourceHandle: ends.targetHandle,
+          targetHandle: ends.sourceHandle,
+        };
+      }
       // Дубли (та же пара source → target) запрещены и в Rust — тихо игнорируем.
       if (view.edges.some((e) => e.source === ends.source && e.target === ends.target)) return;
       try {
@@ -320,6 +475,11 @@ export const useGraph = create<GraphState>()((set, get) => {
       } catch (e) {
         fail(canvasId, e);
       }
+      if (nodeIds.length) {
+        refreshOwnerProgress(canvasId);
+        // Вместе с задачами ушли их поддеревья — просвечивание перечитываем.
+        if (canvasId === topCanvas()) void refreshSubtree();
+      }
     },
 
     queueViewport: (layerCanvasId, viewport) => {
@@ -335,17 +495,21 @@ export const useGraph = create<GraphState>()((set, get) => {
     switchSpace: async (spaceId) => {
       const space = get().spaces.find((sp) => sp.id === spaceId);
       if (!space) return;
-      const seq = ++switchSeq;
+      const seq = ++navSeq;
       // Отложенные перемещения/вьюпорт текущего пространства — в БД до загрузки нового.
       flushAll();
       try {
         const data = await api.loadCanvas(space.rootCanvas);
-        if (seq !== switchSeq) return;
+        const subtree = await fetchSubtree(space.rootCanvas);
+        if (seq !== navSeq) return;
+        // Все уровни монтируются заново — сразу с камерой нового пространства.
+        viewportBus.reset(data.canvas.viewport);
         // Кэш холстов сбрасываем целиком: всё отложенное уже ушло в очередь записи.
         set({
           activeSpaceId: space.id,
           layers: [space.rootCanvas],
           canvases: { [space.rootCanvas]: toView(data) },
+          subtree,
           editingNodeId: null,
         });
         await api.setAppState(APP_STATE.activeSpace, space.id);
@@ -409,8 +573,57 @@ export const useGraph = create<GraphState>()((set, get) => {
     startEditing: (nodeId) => set({ editingNodeId: nodeId }),
     stopEditing: () => set({ editingNodeId: null }),
 
-    // TODO(M3): стек слоёв — get_or_create_child_canvas + push в `layers`.
-    enterLayer: () => {},
+    enterLayer: async (nodeId) => {
+      const top = topCanvas();
+      const node = top ? get().canvases[top]?.nodes.find((n) => n.id === nodeId) : undefined;
+      if (!node || node.data.model.kind !== "task") return;
+      try {
+        const child = await api.getOrCreateChildCanvas(nodeId);
+        if (topCanvas() !== top) return; // пока ждали, ушли на другой уровень
+        await navigate([...get().layers, child.id]);
+      } catch (e) {
+        get().showError(e);
+      }
+    },
+
+    exitTo: async (index) => {
+      const { layers } = get();
+      if (index < 0 || index >= layers.length - 1) return;
+      await navigate(layers.slice(0, index + 1));
+    },
+
+    diveTo: async (nodeId) => {
+      const { layers, subtree, canvases } = get();
+      const top = layers[layers.length - 1];
+      if (!subtree || subtree.canvasId !== top) return;
+      // На каком холсте лежит каждая нода (верхний + поддерево) и кто владелец каждого холста.
+      const nodeCanvas = new Map<string, string>();
+      canvases[top]?.nodes.forEach((n) => nodeCanvas.set(n.id, top));
+      const owner = new Map<string, string>();
+      for (const l of subtree.levels) {
+        l.nodes.forEach((n) => nodeCanvas.set(n.id, l.canvas.id));
+        if (l.canvas.ownerNode) owner.set(l.canvas.id, l.canvas.ownerNode);
+      }
+      const chain: string[] = [];
+      let cid = nodeCanvas.get(nodeId);
+      while (cid && cid !== top) {
+        chain.unshift(cid);
+        const o = owner.get(cid);
+        cid = o ? nodeCanvas.get(o) : undefined;
+      }
+      if (cid !== top || chain.length === 0) return;
+      await navigate([...layers, ...chain], nodeId);
+    },
+
+    setShowNested: async (show) => {
+      set({ showNested: show, subtree: show ? get().subtree : null });
+      if (show) await refreshSubtree();
+      try {
+        await api.setAppState(APP_STATE.showNested, show ? "1" : "0");
+      } catch (e) {
+        get().showError(e);
+      }
+    },
 
     showError: (e) => {
       const msg = errorMessage(e);

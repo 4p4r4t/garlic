@@ -1,8 +1,13 @@
+use std::collections::HashMap;
+
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use super::{edges, ensure_finite, new_id, nodes};
 use crate::error::{AppError, AppResult};
-use crate::model::{Canvas, CanvasData, NodeKind, Viewport};
+use crate::model::{Canvas, CanvasData, NodeKind, NodeProgress, SubtreeLevel, Viewport};
+
+/// Предел глубины `load_subtree` (защита от слишком тяжёлых запросов).
+pub const MAX_SUBTREE_DEPTH: u32 = 16;
 
 const COLS: &str = "id, space_id, owner_node, viewport_x, viewport_y, zoom";
 
@@ -39,7 +44,98 @@ pub fn load(conn: &Connection, id: &str) -> AppResult<CanvasData> {
         canvas: get(conn, id)?,
         nodes: nodes::list_by_canvas(conn, id)?,
         edges: edges::list_by_canvas(conn, id)?,
+        progress: progress(conn, id)?,
     })
+}
+
+/// Прогресс подзадач нод холста `id`: для каждой задачи с вложенным холстом,
+/// где есть задачи, — сколько из них `done`. Считается только прямой вложенный
+/// холст (подзадачи подзадач не входят — у них свой бейдж).
+pub fn progress(conn: &Connection, id: &str) -> AppResult<Vec<NodeProgress>> {
+    let mut stmt = conn.prepare(
+        "SELECT o.id,
+                SUM(CASE WHEN n.status = 'done' THEN 1 ELSE 0 END),
+                COUNT(n.id)
+         FROM nodes o
+         JOIN canvases c ON c.owner_node = o.id
+         JOIN nodes n ON n.canvas_id = c.id AND n.kind = 'task'
+         WHERE o.canvas_id = ?1
+         GROUP BY o.id
+         ORDER BY o.id",
+    )?;
+    let rows = stmt.query_map([id], |r| {
+        Ok(NodeProgress {
+            node_id: r.get(0)?,
+            done: r.get(1)?,
+            total: r.get(2)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Все вложенные холсты под холстом `id` до глубины `max_depth` включительно
+/// (рекурсивный CTE), по возрастанию глубины. Нужен для «просвечивания»
+/// подзадач на текущем холсте (ТЗ §4.5.1). Сам холст `id` не входит.
+pub fn load_subtree(conn: &Connection, id: &str, max_depth: u32) -> AppResult<Vec<SubtreeLevel>> {
+    get(conn, id)?;
+    let max_depth = max_depth.min(MAX_SUBTREE_DEPTH);
+    if max_depth == 0 {
+        return Ok(Vec::new());
+    }
+    struct Row {
+        canvas: Canvas,
+        parent_canvas: String,
+        owner_title: String,
+        depth: u32,
+    }
+    let rows: Vec<Row> = {
+        let mut stmt = conn.prepare(
+            "WITH RECURSIVE sub(id, parent_canvas, owner_title, depth) AS (
+                 SELECT c.id, o.canvas_id, o.title, 1
+                 FROM canvases c JOIN nodes o ON o.id = c.owner_node
+                 WHERE o.canvas_id = ?1
+                 UNION ALL
+                 SELECT c.id, o.canvas_id, o.title, sub.depth + 1
+                 FROM sub
+                 JOIN nodes o ON o.canvas_id = sub.id
+                 JOIN canvases c ON c.owner_node = o.id
+                 WHERE sub.depth < ?2
+             )
+             SELECT c.id, c.space_id, c.owner_node, c.viewport_x, c.viewport_y, c.zoom,
+                    sub.parent_canvas, sub.owner_title, sub.depth
+             FROM sub JOIN canvases c ON c.id = sub.id
+             ORDER BY sub.depth, c.owner_node",
+        )?;
+        let it = stmt.query_map(params![id, max_depth], |r| {
+            Ok(Row {
+                canvas: from_row(r)?,
+                parent_canvas: r.get(6)?,
+                owner_title: r.get(7)?,
+                depth: r.get(8)?,
+            })
+        })?;
+        it.collect::<Result<_, _>>()?
+    };
+
+    // Строки отсортированы по глубине: путь родителя всегда посчитан раньше.
+    let mut paths: HashMap<String, Vec<String>> = HashMap::new();
+    paths.insert(id.to_owned(), Vec::new());
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        let mut path = paths.get(&row.parent_canvas).cloned().unwrap_or_default();
+        path.push(row.owner_title);
+        paths.insert(row.canvas.id.clone(), path.clone());
+        let cid = row.canvas.id.clone();
+        out.push(SubtreeLevel {
+            nodes: nodes::list_by_canvas(conn, &cid)?,
+            edges: edges::list_by_canvas(conn, &cid)?,
+            progress: progress(conn, &cid)?,
+            canvas: row.canvas,
+            depth: row.depth,
+            path,
+        });
+    }
+    Ok(out)
 }
 
 pub fn save_viewport(conn: &Connection, id: &str, vp: Viewport) -> AppResult<()> {

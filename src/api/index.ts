@@ -15,6 +15,7 @@ import type {
   NodePatch,
   NodePosition,
   Space,
+  SubtreeLevel,
   Viewport,
 } from "./types";
 
@@ -27,6 +28,8 @@ function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
 /** Ключи app_state. */
 export const APP_STATE = {
   activeSpace: "active_space",
+  /** "1"/"0" — показывать ли вложенные уровни на текущем холсте (ТЗ §4.5.1). */
+  showNested: "show_nested",
 } as const;
 
 export const api = {
@@ -38,6 +41,8 @@ export const api = {
 
   // холсты
   loadCanvas: (canvasId: string) => invoke<CanvasData>("load_canvas", { canvasId }),
+  loadSubtree: (canvasId: string, maxDepth: number) =>
+    invoke<SubtreeLevel[]>("load_subtree", { canvasId, maxDepth }),
   getOrCreateChildCanvas: (nodeId: string) =>
     invoke<Canvas>("get_or_create_child_canvas", { nodeId }),
   saveViewport: (canvasId: string, viewport: Viewport) =>
