@@ -69,7 +69,20 @@ interface GraphState {
   onNodesChange: (canvasId: string, changes: NodeChange<FlowNode>[]) => void;
   onEdgesChange: (canvasId: string, changes: EdgeChange<FlowEdge>[]) => void;
 
-  createNode: (canvasId: string, kind: NodeKind, pos: { x: number; y: number }) => Promise<void>;
+  /** Создаёт ноду; возвращает её модель (null — ошибка уже показана). */
+  createNode: (
+    canvasId: string,
+    kind: NodeKind,
+    pos: { x: number; y: number },
+  ) => Promise<NodeModel | null>;
+  /** Создаёт ноду и сразу стрелку к ней от `from` (ТЗ §4.2.1, стрелка в пустое место). */
+  createConnectedNode: (
+    canvasId: string,
+    kind: NodeKind,
+    pos: { x: number; y: number },
+    from: { nodeId: string; handle: HandleSide | null },
+    targetHandle: HandleSide,
+  ) => Promise<void>;
   updateNode: (canvasId: string, id: string, patch: NodePatch) => Promise<void>;
   cycleStatus: (canvasId: string, id: string) => void;
   queueMove: (canvasId: string, positions: NodePosition[]) => void;
@@ -80,6 +93,9 @@ interface GraphState {
 
   startEditing: (nodeId: string) => void;
   stopEditing: () => void;
+
+  /** Вход в слой подзадач задачи (ТЗ §4.5). Заглушка: реализуется в M3. */
+  enterLayer: (nodeId: string) => void;
 
   showError: (e: unknown) => void;
   dismissToast: () => void;
@@ -207,9 +223,22 @@ export const useGraph = create<GraphState>()((set, get) => {
         patchView(canvasId, (v) => ({ ...v, nodes: [...v.nodes, toFlowNode(model)] }));
         // Новая задача сразу открывается на редактирование заголовка (ТЗ §4.2).
         if (kind === "task") set({ editingNodeId: model.id });
+        return model;
       } catch (e) {
         get().showError(e);
+        return null;
       }
+    },
+
+    createConnectedNode: async (canvasId, kind, pos, from, targetHandle) => {
+      const model = await get().createNode(canvasId, kind, pos);
+      if (!model) return;
+      await get().connect(canvasId, {
+        source: from.nodeId,
+        target: model.id,
+        sourceHandle: from.handle,
+        targetHandle,
+      });
     },
 
     updateNode: async (canvasId, id, patch) => {
@@ -281,6 +310,9 @@ export const useGraph = create<GraphState>()((set, get) => {
 
     startEditing: (nodeId) => set({ editingNodeId: nodeId }),
     stopEditing: () => set({ editingNodeId: null }),
+
+    // TODO(M3): стек слоёв — get_or_create_child_canvas + push в `layers`.
+    enterLayer: () => {},
 
     showError: (e) => {
       const msg = errorMessage(e);

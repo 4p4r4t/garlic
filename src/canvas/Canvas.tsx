@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -13,13 +13,17 @@ import {
   type NodeChange,
   type NodeTypes,
   type OnBeforeDelete,
+  type Position,
   type Viewport,
+  type XYPosition,
 } from "@xyflow/react";
 
 import { api, type HandleSide, type NodeKind } from "../api";
 import { useGraph } from "../store/graph";
 import { CanvasMenu } from "./CanvasMenu";
 import { EDGE_COLOR, isHandleSide, type FlowEdge, type FlowNode } from "./flow";
+import { GhostEdge } from "./GhostEdge";
+import { NodeMenu } from "./NodeMenu";
 import { NoteNode } from "./NoteNode";
 import { TaskNode } from "./TaskNode";
 
@@ -35,7 +39,28 @@ interface MenuState {
   screen: { x: number; y: number };
   /** координаты холста — куда ставить ноду */
   flow: { x: number; y: number };
+  /** Меню открыто отпусканием стрелки в пустом месте (ТЗ §4.2.1): откуда она тянется. */
+  from?: PendingSource;
 }
+
+interface PendingSource {
+  nodeId: string;
+  handle: HandleSide | null;
+  /** центр исходного хэндла (координаты холста) и его сторона — для призрачной стрелки */
+  point: XYPosition;
+  position: Position;
+  /** сторона новой ноды, обращённая к источнику */
+  side: HandleSide;
+}
+
+interface NodeMenuState {
+  nodeId: string;
+  /** экранный прямоугольник ноды на момент открытия */
+  anchor: DOMRect;
+}
+
+/** Ожидаемый размер новой ноды (min-width .g-node × одна строка) — для её размещения. */
+const NEW_NODE_SIZE = { w: 150, h: 40 };
 
 /** Ближайшая к точке сторона прямоугольника — для стрелки, брошенной на тело ноды. */
 function nearestSide(rect: DOMRect, x: number, y: number): HandleSide {
@@ -46,6 +71,29 @@ function nearestSide(rect: DOMRect, x: number, y: number): HandleSide {
     ["left", Math.abs(x - rect.left)],
   ];
   return d.reduce((a, b) => (b[1] < a[1] ? b : a))[0];
+}
+
+/** Сторона новой ноды в точке `at`, обращённая к источнику `from`. */
+function sideToward(at: XYPosition, from: XYPosition): HandleSide {
+  const dx = from.x - at.x;
+  const dy = from.y - at.y;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx < 0 ? "left" : "right";
+  return dy < 0 ? "top" : "bottom";
+}
+
+/** Левый верхний угол новой ноды — так, чтобы середина стороны `side` пришлась на `at`. */
+function placeBySide(at: XYPosition, side: HandleSide): XYPosition {
+  const { w, h } = NEW_NODE_SIZE;
+  switch (side) {
+    case "left":
+      return { x: at.x, y: at.y - h / 2 };
+    case "right":
+      return { x: at.x - w, y: at.y - h / 2 };
+    case "top":
+      return { x: at.x - w / 2, y: at.y };
+    case "bottom":
+      return { x: at.x - w / 2, y: at.y - h };
+  }
 }
 
 function pointOf(event: MouseEvent | TouchEvent): { x: number; y: number } | null {
@@ -62,6 +110,9 @@ export function FlowCanvas({ canvasId }: { canvasId: string }) {
   const onNodesChangeStore = useGraph((s) => s.onNodesChange);
   const onEdgesChangeStore = useGraph((s) => s.onEdgesChange);
   const createNode = useGraph((s) => s.createNode);
+  const createConnectedNode = useGraph((s) => s.createConnectedNode);
+  const updateNode = useGraph((s) => s.updateNode);
+  const enterLayer = useGraph((s) => s.enterLayer);
   const queueMove = useGraph((s) => s.queueMove);
   const queueViewport = useGraph((s) => s.queueViewport);
   const connect = useGraph((s) => s.connect);
@@ -69,10 +120,17 @@ export function FlowCanvas({ canvasId }: { canvasId: string }) {
   const startEditing = useGraph((s) => s.startEditing);
   const showError = useGraph((s) => s.showError);
 
-  const { screenToFlowPosition } = useReactFlow<FlowNode, FlowEdge>();
+  const { screenToFlowPosition, deleteElements } = useReactFlow<FlowNode, FlowEdge>();
+  const rootRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [nodeMenu, setNodeMenu] = useState<NodeMenuState | null>(null);
   const [connecting, setConnecting] = useState(false);
   const closeMenu = useCallback(() => setMenu(null), []);
+  const closeNodeMenu = useCallback(() => setNodeMenu(null), []);
+  const closeMenus = useCallback(() => {
+    setMenu(null);
+    setNodeMenu(null);
+  }, []);
 
   // Вьюпорт берём один раз при монтировании холста: дальше им владеет React Flow.
   const [defaultViewport] = useState(() => view?.canvas.viewport);
@@ -91,34 +149,76 @@ export function FlowCanvas({ canvasId }: { canvasId: string }) {
     (event: MouseEvent | ReactMouseEvent) => {
       event.preventDefault();
       const screen = { x: event.clientX, y: event.clientY };
+      setNodeMenu(null);
       setMenu({ screen, flow: screenToFlowPosition(screen) });
     },
     [screenToFlowPosition],
   );
 
-  /**
-   * ПКМ по ноде. Браузерное меню подавлено; здесь M2 откроет
-   * горизонтальную полосу иконок ноды (цвет / подзадачи / удалить, ТЗ §4.4).
-   */
-  const onNodeContextMenu = useCallback((event: ReactMouseEvent, _node: FlowNode) => {
+  /** ПКМ по ноде — полоса иконок ноды: цвет / подзадачи / удалить (ТЗ §4.4). */
+  const onNodeContextMenu = useCallback((event: ReactMouseEvent, node: FlowNode) => {
     event.preventDefault();
     setMenu(null);
-    // TODO(M2): openNodeMenu(_node.id, { x: event.clientX, y: event.clientY })
+    const el = event.currentTarget;
+    if (!(el instanceof HTMLElement)) return;
+    setNodeMenu({ nodeId: node.id, anchor: el.getBoundingClientRect() });
   }, []);
 
-  const suppressContextMenu = useCallback((event: ReactMouseEvent) => {
-    event.preventDefault();
-    setMenu(null);
-  }, []);
+  const suppressContextMenu = useCallback(
+    (event: ReactMouseEvent) => {
+      event.preventDefault();
+      closeMenus();
+    },
+    [closeMenus],
+  );
 
   const onPick = useCallback(
     (kind: NodeKind) => {
       if (!menu) return;
       setMenu(null);
-      void createNode(canvasId, kind, menu.flow);
+      const { from } = menu;
+      if (from) {
+        void createConnectedNode(
+          canvasId,
+          kind,
+          placeBySide(menu.flow, from.side),
+          { nodeId: from.nodeId, handle: from.handle },
+          from.side,
+        );
+      } else {
+        void createNode(canvasId, kind, menu.flow);
+      }
     },
-    [canvasId, createNode, menu],
+    [canvasId, createConnectedNode, createNode, menu],
   );
+
+  // --- меню ноды ---
+  const menuNode = useMemo(
+    () => (nodeMenu ? view?.nodes.find((n) => n.id === nodeMenu.nodeId) : undefined),
+    [nodeMenu, view],
+  );
+
+  const onNodeColor = useCallback(
+    (color: string | null) => {
+      if (!menuNode) return;
+      setNodeMenu(null);
+      if (color !== menuNode.data.model.color) void updateNode(canvasId, menuNode.id, { color });
+    },
+    [canvasId, menuNode, updateNode],
+  );
+
+  const onNodeSubtasks = useCallback(() => {
+    if (!menuNode) return;
+    setNodeMenu(null);
+    enterLayer(menuNode.id);
+  }, [enterLayer, menuNode]);
+
+  /** Через React Flow — с тем же подтверждением и сохранением, что и клавиша Delete. */
+  const onNodeDelete = useCallback(() => {
+    if (!menuNode) return;
+    setNodeMenu(null);
+    void deleteElements({ nodes: [{ id: menuNode.id }] });
+  }, [deleteElements, menuNode]);
 
   // --- перемещение и вьюпорт ---
   const savePositions = useCallback(
@@ -157,11 +257,14 @@ export function FlowCanvas({ canvasId }: { canvasId: string }) {
   );
 
   const onConnectStart = useCallback(() => {
-    setMenu(null);
+    closeMenus();
     setConnecting(true);
-  }, []);
+  }, [closeMenus]);
 
-  /** Стрелку можно бросить не только на хэндл, но и на тело ноды. */
+  /**
+   * Стрелку можно бросить не только на хэндл, но и на тело ноды. Брошенная
+   * в пустое место — открывает меню «Задача / Заметка» для соединённой ноды (§4.2.1).
+   */
   const onConnectEnd = useCallback(
     (event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
       setConnecting(false);
@@ -169,18 +272,37 @@ export function FlowCanvas({ canvasId }: { canvasId: string }) {
       const fromId = state.fromNode?.id;
       const pt = pointOf(event);
       if (!fromId || !pt) return;
-      const el = document.elementFromPoint(pt.x, pt.y)?.closest<HTMLElement>(".react-flow__node");
-      const targetId = el?.dataset.id;
-      if (!el || !targetId || targetId === fromId) return;
       const fromHandle = state.fromHandle?.id;
-      void connect(canvasId, {
-        source: fromId,
-        target: targetId,
-        sourceHandle: isHandleSide(fromHandle) ? fromHandle : null,
-        targetHandle: nearestSide(el.getBoundingClientRect(), pt.x, pt.y),
+      const sourceHandle = isHandleSide(fromHandle) ? fromHandle : null;
+      const hit = document.elementFromPoint(pt.x, pt.y);
+      const el = hit?.closest<HTMLElement>(".react-flow__node");
+      if (el) {
+        const targetId = el.dataset.id;
+        if (!targetId || targetId === fromId) return;
+        void connect(canvasId, {
+          source: fromId,
+          target: targetId,
+          sourceHandle,
+          targetHandle: nearestSide(el.getBoundingClientRect(), pt.x, pt.y),
+        });
+        return;
+      }
+      // Пустое место — только сам холст этого слоя (не топбар, не меню и т.п.).
+      if (!hit || !rootRef.current?.contains(hit) || !state.from || !state.fromPosition) return;
+      const flow = screenToFlowPosition(pt);
+      setMenu({
+        screen: pt,
+        flow,
+        from: {
+          nodeId: fromId,
+          handle: sourceHandle,
+          point: state.from,
+          position: state.fromPosition,
+          side: sideToward(flow, state.from),
+        },
       });
     },
-    [canvasId, connect],
+    [canvasId, connect, screenToFlowPosition],
   );
 
   // --- удаление ---
@@ -226,7 +348,7 @@ export function FlowCanvas({ canvasId }: { canvasId: string }) {
   if (!view) return null;
 
   return (
-    <div className={`canvas-root${connecting ? " is-connecting" : ""}`}>
+    <div ref={rootRef} className={`canvas-root${connecting ? " is-connecting" : ""}`}>
       <ReactFlow<FlowNode, FlowEdge>
         nodes={view.nodes}
         edges={view.edges}
@@ -252,10 +374,10 @@ export function FlowCanvas({ canvasId }: { canvasId: string }) {
         onNodeContextMenu={onNodeContextMenu}
         onEdgeContextMenu={suppressContextMenu}
         onSelectionContextMenu={suppressContextMenu}
-        onPaneClick={closeMenu}
-        onMoveStart={closeMenu}
+        onPaneClick={closeMenus}
+        onMoveStart={closeMenus}
         onMoveEnd={onMoveEnd}
-        onNodeDragStart={closeMenu}
+        onNodeDragStart={closeMenus}
         onNodeDragStop={savePositions}
         onSelectionDragStop={saveSelectionPositions}
         onNodeDoubleClick={onNodeDoubleClick}
@@ -263,9 +385,27 @@ export function FlowCanvas({ canvasId }: { canvasId: string }) {
         onDelete={onDelete}
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.3} color="var(--grid-dot)" />
+        {menu?.from && (
+          <GhostEdge
+            from={menu.from.point}
+            fromPosition={menu.from.position}
+            to={menu.flow}
+            toSide={menu.from.side}
+          />
+        )}
       </ReactFlow>
       {menu && (
         <CanvasMenu x={menu.screen.x} y={menu.screen.y} onPick={onPick} onClose={closeMenu} />
+      )}
+      {nodeMenu && menuNode && (
+        <NodeMenu
+          model={menuNode.data.model}
+          anchor={nodeMenu.anchor}
+          onColor={onNodeColor}
+          onSubtasks={onNodeSubtasks}
+          onDelete={onNodeDelete}
+          onClose={closeNodeMenu}
+        />
       )}
     </div>
   );
