@@ -14,7 +14,7 @@ import { Explorer } from "./Explorer";
 import { NoteArea, TabBar } from "./NoteArea";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { RightPanel } from "./RightPanel";
-import { useResults } from "./results";
+import { inResults, useResults } from "./results";
 import { SearchView } from "./SearchView";
 import { docs, flushAllDocs, useKb } from "./store";
 import "./kb.css";
@@ -87,8 +87,13 @@ export default function KbMode({ active }: { active: boolean }) {
     const req = useMode.getState().takeKbRequest();
     if (!req) return;
     const kb = useKb.getState();
-    if (req.kind === "open") void kb.openNote(req.path, { newTab: req.newTab });
-    else kb.revealInTree(req.path);
+    if (req.kind === "open") {
+      void kb.openNote(req.path, { newTab: req.newTab });
+      return;
+    }
+    // Папка не из результатов под фильтром не видна — фильтр снимается.
+    if (kb.resultsOnly && !inResults(req.path, useResults.getState().byPath)) kb.setResultsOnly(false);
+    kb.revealInTree(req.path);
   }, [ready, kbRequest]);
 
   // Уход из режима / закрытие окна — сохранить несохранённое.
