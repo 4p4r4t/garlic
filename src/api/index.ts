@@ -15,6 +15,7 @@ import type {
   NodePatch,
   NodePosition,
   Space,
+  SpaceTask,
   SubtreeLevel,
   TaskStatus,
   Viewport,
@@ -68,6 +69,9 @@ export const api = {
   // состояние приложения
   getAppState: (key: string) => invoke<string | null>("get_app_state", { key }),
   setAppState: (key: string, value: string) => invoke<void>("set_app_state", { key, value }),
+
+  // обзор задач (ТЗ §4.6.1)
+  listSpaceTasks: (spaceId: string) => invoke<SpaceTask[]>("list_space_tasks", { spaceId }),
 };
 
 /** Текст ошибки из команды (AppError сериализуется строкой). */

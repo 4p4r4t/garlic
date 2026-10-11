@@ -13,6 +13,7 @@ import { useShallow } from "zustand/react/shallow";
 
 import { FlowCanvas } from "../canvas/Canvas";
 import { useGraph } from "../store/graph";
+import { CameraFocus } from "./CameraFocus";
 
 /** Длительность анимации входа/выхода (ТЗ §4.5: ~200 мс). Зеркало — styles.css. */
 export const LAYER_ANIM_MS = 200;
@@ -136,6 +137,7 @@ const Level = memo(function Level({
             parentCanvasId={parentCanvasId}
             coveredNodeId={coveredNodeId}
           />
+          <CameraFocus canvasId={canvasId} active={active && !leaving} />
         </ReactFlowProvider>
       </div>
     </>

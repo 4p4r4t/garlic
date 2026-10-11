@@ -224,3 +224,22 @@ where
 {
     Option::<T>::deserialize(de).map(Some)
 }
+
+/// Задача пространства для обзора задач (`list_space_tasks`, ТЗ §4.6.1).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpaceTask {
+    pub id: String,
+    pub title: String,
+    pub status: TaskStatus,
+    pub color: Option<String>,
+    /// Холст, на котором лежит задача.
+    pub canvas_id: String,
+    /// Задача-владелец этого холста; `None` — корневой холст пространства.
+    pub parent_node_id: Option<String>,
+    /// 0 — корневой холст, 1 — подзадачи, …
+    pub depth: u32,
+    pub x: f64,
+    pub y: f64,
+    pub created_at: i64,
+}

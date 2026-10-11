@@ -48,6 +48,7 @@ pub fn run() {
             commands::delete_edges,
             commands::get_app_state,
             commands::set_app_state,
+            commands::list_space_tasks,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска приложения Garlic");

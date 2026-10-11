@@ -1220,3 +1220,313 @@ button.crumb:hover {
 .is-select-key .react-flow__node-ghost {
   pointer-events: none !important;
 }
+
+/* ---------- обзор задач (ТЗ §4.6.1, src/overview) ---------- */
+
+.ov-st-todo {
+  --ov-st: var(--muted);
+}
+.ov-st-in_progress {
+  --ov-st: #e2b04a;
+}
+.ov-st-done {
+  --ov-st: #6fbf73;
+}
+
+/* колонка кнопок: сама не ловит мышь — пан холста вокруг кнопок работает */
+.ov-rail {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  z-index: 43;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.ov-rail-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--menu-bg);
+  color: var(--ov-st);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    background 120ms ease-out,
+    border-color 120ms ease-out,
+    transform 120ms ease-out;
+}
+.ov-rail-btn:hover {
+  background: var(--menu-hover);
+  transform: scale(1.06);
+}
+.ov-rail-btn.is-active {
+  border-color: var(--ov-st);
+  box-shadow:
+    0 0 0 1px var(--ov-st),
+    0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+/* тултип слева от кнопки */
+.ov-rail-btn::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 10px);
+  padding: 4px 9px;
+  transform: translateY(-50%);
+  background: var(--menu-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4);
+  color: var(--fg);
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease-out 250ms;
+}
+.ov-rail-btn:hover::after {
+  opacity: 1;
+}
+
+.ov-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  background: rgba(8, 9, 13, 0.55);
+  animation: layer-fade-in 160ms ease-out;
+}
+
+.ov-panel {
+  position: absolute;
+  top: 28px;
+  left: 50%;
+  z-index: 42;
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100% - 56px);
+  width: min(60%, 860px);
+  min-width: min(420px, calc(100% - 120px));
+  transform: translateX(-50%);
+  background: var(--menu-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+  animation: ov-pop 160ms ease-out;
+}
+
+@keyframes ov-pop {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px);
+  }
+}
+
+.ov-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ov-tabs {
+  display: flex;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ov-tab {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ov-tab svg {
+  color: var(--ov-st);
+}
+.ov-tab:hover {
+  color: var(--fg);
+}
+.ov-tab.is-active {
+  border-bottom-color: var(--ov-st);
+  color: var(--fg);
+}
+
+.ov-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.ov-close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-bottom: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ov-close:hover {
+  background: var(--menu-hover);
+  color: var(--fg);
+}
+
+.ov-body {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  padding: 8px 8px 12px;
+}
+
+.ov-empty {
+  padding: 28px 12px;
+  color: var(--faint);
+  text-align: center;
+}
+
+.ov-tree,
+.ov-tree ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* вложенность: отступ + тонкая направляющая */
+.ov-tree ul {
+  margin-left: 15px;
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+
+.ov-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 30px;
+  border-radius: 6px;
+}
+.ov-row:hover {
+  background: var(--menu-hover);
+}
+.ov-row.is-context {
+  opacity: 0.5;
+}
+.ov-row.is-context:hover {
+  opacity: 0.8;
+}
+
+.ov-chevron {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.ov-chevron svg {
+  transition: transform 120ms ease-out;
+}
+.ov-chevron.is-open svg {
+  transform: rotate(90deg);
+}
+.ov-chevron:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg);
+}
+.ov-chevron.is-leaf {
+  cursor: default;
+}
+.ov-chevron.is-leaf:hover {
+  background: transparent;
+}
+
+.ov-status {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ov-st);
+  cursor: pointer;
+}
+.ov-status:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.ov-title {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 8px 5px 4px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+.ov-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-title-text.is-empty {
+  color: var(--faint);
+  font-style: italic;
+}
+.ov-st-done .ov-title-text {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.ov-swatch {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.ov-hidden-count {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+  font-size: 11px;
+}
