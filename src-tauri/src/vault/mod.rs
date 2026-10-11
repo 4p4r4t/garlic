@@ -7,6 +7,7 @@ pub mod links;
 pub mod names;
 pub mod ops;
 pub mod paths;
+pub mod preview;
 pub mod watcher;
 
 use std::path::{Path, PathBuf};

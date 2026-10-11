@@ -17,14 +17,58 @@ pub fn rewrite_prefix(conn: &Connection, old: &str, new: &str) -> AppResult<usiz
         return Ok(0);
     }
     let old_dir = format!("{old}/");
+    let tx = conn.unchecked_transaction()?;
     // Без LIKE: в именах файлов бывают `%` и `_`.
-    Ok(conn.execute(
+    let n = tx.execute(
         "UPDATE nodes
             SET kb_path = ?2 || substr(kb_path, length(?1) + 1)
           WHERE kb_path = ?1
              OR substr(kb_path, 1, length(?3)) = ?3",
         params![old, new, old_dir],
-    )?)
+    )?;
+    if n > 0 {
+        sync_note_titles(&tx, new)?;
+    }
+    tx.commit()?;
+    Ok(n)
+}
+
+/// Заголовок ноды-заметки = имя её файла (ТЗ §4.10): после переименования/
+/// перемещения `prefix` (файла или папки) заголовки нод-заметок, привязанных
+/// к `.md` по этому пути, приводятся к имени файла.
+pub fn sync_note_titles(conn: &Connection, prefix: &str) -> AppResult<usize> {
+    let dir = format!("{prefix}/");
+    let rows: Vec<(String, String, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT id, kb_path, title FROM nodes
+              WHERE kind = 'note'
+                AND (kb_path = ?1 OR substr(kb_path, 1, length(?2)) = ?2)",
+        )?;
+        let it = stmt.query_map(params![prefix, dir], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?;
+        it.collect::<Result<_, _>>()?
+    };
+    let mut changed = 0;
+    for (id, path, title) in rows {
+        let Some(stem) = note_stem(&path) else {
+            continue;
+        };
+        if stem != title {
+            conn.execute(
+                "UPDATE nodes SET title = ?2, updated_at = ?3 WHERE id = ?1",
+                params![id, stem, super::now_ms()],
+            )?;
+            changed += 1;
+        }
+    }
+    Ok(changed)
+}
+
+/// Имя файла заметки без `.md` (`a/План.md` → `План`); не заметка — `None`.
+pub fn note_stem(path: &str) -> Option<String> {
+    let name = crate::vault::paths::file_name(path);
+    crate::vault::paths::is_md(name).then(|| name[..name.len() - 3].to_owned())
 }
 
 /// Ноды всех пространств, привязанные ровно к `path` (заметке или папке).

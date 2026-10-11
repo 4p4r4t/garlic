@@ -76,14 +76,23 @@ pub async fn save_viewport(db: Cmd<'_>, canvas_id: String, viewport: Viewport) -
 
 // ---- ноды ----
 
+/// Нода-заметка сразу получает свой `.md` в базе знаний (ТЗ §4.10).
 #[tauri::command]
-pub async fn create_node(db: Cmd<'_>, input: NewNode) -> AppResult<Node> {
-    repo::nodes::create(&*db.conn()?, &input)
+pub async fn create_node(db: Cmd<'_>, vault: V<'_>, input: NewNode) -> AppResult<Node> {
+    let root = vault.root().ok();
+    crate::kblink::create_node(&*db.conn()?, root.as_deref(), &input)
 }
 
+/// У ноды-заметки новый заголовок переименовывает её `.md` (ТЗ §4.10).
 #[tauri::command]
-pub async fn update_node(db: Cmd<'_>, id: String, patch: NodePatch) -> AppResult<Node> {
-    repo::nodes::update(&*db.conn()?, &id, &patch)
+pub async fn update_node(
+    db: Cmd<'_>,
+    vault: V<'_>,
+    id: String,
+    patch: NodePatch,
+) -> AppResult<Node> {
+    let root = vault.root().ok();
+    crate::kblink::update_node(&*db.conn()?, root.as_deref(), &id, &patch)
 }
 
 #[tauri::command]
@@ -305,4 +314,44 @@ pub async fn kb_linked_nodes(
     path: String,
 ) -> AppResult<Vec<crate::model::LinkedNode>> {
     repo::kb::linked_nodes(&*db.conn()?, &vault::paths::normalize_rel(&path)?)
+}
+
+// ---- ссылки нод на базу знаний (ТЗ §4.10, M5.2) ----
+// Операции поля-ссылки работают с путём; куда записать результат (сейчас —
+// `update_node(kbPath)`), решает фронт.
+
+/// Новая заметка/папка для поля-ссылки: в `dir` (не указана — папка по
+/// умолчанию `kb.default_folder`; создаётся при отсутствии), имя `name`. → путь.
+#[tauri::command]
+pub async fn kb_create_target(
+    db: Cmd<'_>,
+    vault: V<'_>,
+    kind: crate::kblink::LinkTarget,
+    dir: Option<String>,
+    name: String,
+) -> AppResult<String> {
+    let dir = match dir {
+        Some(d) => d,
+        None => crate::kblink::default_folder(&*db.conn()?)?,
+    };
+    crate::kblink::create_target(&vault.root()?, &dir, kind, &name)
+}
+
+/// «Заметка → папка»: папка `folder_name` рядом с заметкой `path`, заметка
+/// переносится в неё (ссылки нод на заметку переписываются). → путь папки.
+#[tauri::command]
+pub async fn kb_note_to_folder(
+    db: Cmd<'_>,
+    vault: V<'_>,
+    path: String,
+    folder_name: String,
+) -> AppResult<String> {
+    crate::kblink::note_to_folder(&*db.conn()?, &vault.root()?, &path, &folder_name)
+}
+
+/// Существование путей ссылок и превью заметок (битые ссылки, карточки заметок).
+#[tauri::command]
+pub async fn kb_stat(vault: V<'_>, paths: Vec<String>) -> AppResult<Vec<crate::kblink::KbStat>> {
+    let root = vault.root().ok();
+    Ok(crate::kblink::stat(root.as_deref(), &paths))
 }

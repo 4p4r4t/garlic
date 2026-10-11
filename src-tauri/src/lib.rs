@@ -3,6 +3,7 @@
 pub mod commands;
 pub mod db;
 pub mod error;
+pub mod kblink;
 pub mod model;
 pub mod repo;
 pub mod vault;
@@ -34,11 +35,14 @@ pub fn run() {
                 Some(p) if !p.trim().is_empty() => std::path::PathBuf::from(p.trim()),
                 _ => vault::default_root(&app.path().document_dir()?),
             };
-            app.manage(commands::Db(Mutex::new(conn)));
-            let vault = vault::Vault::new(vault_root.clone());
             if let Err(e) = std::fs::create_dir_all(&vault_root) {
                 eprintln!("[garlic] vault {}: {e}", vault_root.display());
+            } else if let Err(e) = kblink::migrate_note_bodies(&conn, &vault_root) {
+                // Флаг не поставлен — повторится при следующем запуске.
+                eprintln!("[garlic] миграция заметок в .md: {e}");
             }
+            app.manage(commands::Db(Mutex::new(conn)));
+            let vault = vault::Vault::new(vault_root.clone());
             vault.restart_watcher(commands::vault_events_handler(app.handle().clone()));
             app.manage(vault);
             Ok(())
@@ -77,6 +81,9 @@ pub fn run() {
             commands::vault_backlinks,
             commands::vault_abs_path,
             commands::kb_linked_nodes,
+            commands::kb_create_target,
+            commands::kb_note_to_folder,
+            commands::kb_stat,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска приложения Garlic");
