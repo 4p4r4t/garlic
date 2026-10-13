@@ -28,7 +28,7 @@ if (typeof window !== "undefined") {
 
 /** Окна и меню поверх графа: пока они открыты, клавиши графа молчат. */
 const OVERLAYS =
-  ".ctx-menu, .node-menu, .spaces-panel, .settings-panel, .ov-panel, .gs-backdrop, .kbp-backdrop, .kb-modal-backdrop, .is-connecting";
+  ".ctx-menu, .node-menu, .spaces-panel, .settings-panel, .ov-panel, .gs-backdrop, .kbp-backdrop, .kb-modal-backdrop, .gm-backdrop, .is-connecting";
 
 /** Клавиша адресована графу: фокус не в поле ввода / редакторе / меню и не над окном. */
 export function keyForGraph(e: KeyboardEvent): boolean {

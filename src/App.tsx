@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { LayerStack } from "./layers/LayerStack";
 import { TaskOverview } from "./overview/TaskOverview";
 import { HotkeyHelp } from "./canvas/hotkeys";
+import { DeleteParentDialog, MovePicker } from "./canvas/TreeDialogs";
 import { GraphSearch, GraphSearchHotkey } from "./search/GraphSearch";
 import { useGraph } from "./store/graph";
 import { installHistory, useHistory } from "./store/history";
@@ -75,6 +76,8 @@ export default function App() {
         </div>
       )}
       <HotkeyHelp />
+      <DeleteParentDialog />
+      <MovePicker />
       <GraphSearch />
       <GraphSearchHotkey />
       {toast && (

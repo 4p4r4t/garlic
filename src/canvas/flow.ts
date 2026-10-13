@@ -17,13 +17,22 @@ export type NodeData = {
   depth?: number;
   /** Путь для тултипа просвечивающей ноды: заголовки владельцев + её заголовок. */
   path?: string[];
+  /** Сосед по уровню (ТЗ §4.12.4): подпись родителя (null — без родителя) и стек слоёв. */
+  parentTitle?: string | null;
+  chain?: string[];
+  /** Рамка ничейного слоя / заглушка-якорь: id этого слоя и размер рамки. */
+  layerId?: string;
+  frame?: { w: number; h: number };
 };
 
 /**
  * task / note — ноды текущего холста; anchor — нода-родитель слоя поверх тинта
- * (ТЗ §4.5); ghost — просвечивающая нода вложенного уровня (ТЗ §4.5.1).
+ * (ТЗ §4.5); ghost — просвечивающая нода вложенного уровня (ТЗ §4.5.1);
+ * neighbor — нода соседнего холста того же уровня (ТЗ §4.12.4); orphanFrame —
+ * пунктирная рамка просвечивающего ничейного слоя, orphanAnchor — заглушка
+ * «Без родителя» вместо якоря в самом ничейном слое (ТЗ §4.12.3).
  */
-export type FlowNodeType = NodeKind | "anchor" | "ghost";
+export type FlowNodeType = NodeKind | "anchor" | "ghost" | "neighbor" | "orphanFrame" | "orphanAnchor";
 export type FlowNode = Node<NodeData, FlowNodeType>;
 export type FlowEdge = Edge;
 

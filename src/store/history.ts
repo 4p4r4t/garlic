@@ -27,16 +27,15 @@ import { create } from "zustand";
 
 import {
   api,
-  type CanvasData,
   type GraphSnapshot,
   type NodeKind,
   type NodeModel,
   type NodePatch,
   type NodePosition,
+  type RegionChange,
   type TaskStatus,
 } from "../api";
-import { progressMap, toFlowEdge, toFlowNode, type FlowNode } from "../canvas/flow";
-import { useGraph, type CanvasView } from "./graph";
+import { useGraph } from "./graph";
 import { useMode } from "./mode";
 
 /** Глубина истории на пространство. */
@@ -111,7 +110,7 @@ function record(step: Step) {
 }
 
 /** Несколько записанных шагов — один шаг истории. */
-async function grouped<T>(label: string, fn: () => Promise<T>): Promise<T> {
+export async function grouped<T>(label: string, fn: () => Promise<T>): Promise<T> {
   if (group) return fn(); // уже внутри группы
   const steps: Step[] = [];
   group = steps;
@@ -119,24 +118,63 @@ async function grouped<T>(label: string, fn: () => Promise<T>): Promise<T> {
     return await fn();
   } finally {
     group = null;
-    if (steps.length === 1) record(steps[0]);
-    else if (steps.length > 1) {
-      record({
-        label,
-        canvasIds: [...new Set(steps.flatMap((s) => s.canvasIds))],
-        at: Date.now(),
-        undo: async () => {
-          for (const s of [...steps].reverse()) await s.undo();
-        },
-        redo: async () => {
-          for (const s of steps) await s.redo();
-        },
-      });
-    }
+    finishGroup(label, steps);
   }
 }
 
+function finishGroup(label: string, steps: Step[]) {
+  if (steps.length === 1) record(steps[0]);
+  else if (steps.length > 1) {
+    record({
+      label,
+      canvasIds: [...new Set(steps.flatMap((s) => s.canvasIds))],
+      at: Date.now(),
+      undo: async () => {
+        for (const s of [...steps].reverse()) await s.undo();
+      },
+      redo: async () => {
+        for (const s of steps) await s.redo();
+      },
+    });
+  }
+}
+
+/**
+ * Синхронная группа: шаги, записанные внутри `fn` (например, перемещение нод
+ * разных холстов одним драгом, ТЗ §4.12.2), — один шаг истории.
+ */
+export function groupSync(label: string, fn: () => void) {
+  if (group) {
+    fn();
+    return;
+  }
+  const steps: Step[] = [];
+  group = steps;
+  try {
+    fn();
+  } finally {
+    group = null;
+    finishGroup(label, steps);
+  }
+}
+
+/** Откуда начато перемещение ноды, которую двигают не мышью, а «за компанию» (подзадачи). */
+export function noteOrigin(id: string, pos: { x: number; y: number }) {
+  if (!dragOrigin.has(id)) dragOrigin.set(id, { ...pos });
+}
+
 // ---------- шаги ----------
+
+/** Шаг перестройки дерева (ТЗ §4.12.3): область холстов до/после. */
+function regionStep(label: string, change: RegionChange): Step {
+  return {
+    label,
+    canvasIds: change.after.region,
+    at: Date.now(),
+    undo: () => api.applyRegion(change.before),
+    redo: () => api.applyRegion(change.after),
+  };
+}
 
 /**
  * Шаг «элементы появились» (создание) или «исчезли» (удаление): переход между
@@ -220,52 +258,8 @@ const plural = (n: number, one: string, many: string) => (n === 1 ? one : `${n} 
 
 // ---------- применение ----------
 
-/** Свежий холст из БД поверх кэша: выделение и размеры нод сохраняются (без мигания). */
-function mergeView(old: CanvasView | undefined, data: CanvasData): CanvasView {
-  const progress = progressMap(data.progress);
-  const oldNodes = new Map(old?.nodes.map((n) => [n.id, n]));
-  const oldEdges = new Map(old?.edges.map((e) => [e.id, e]));
-  return {
-    canvas: old ? { ...data.canvas, viewport: old.canvas.viewport } : data.canvas,
-    nodes: data.nodes.map((m): FlowNode => {
-      const fresh = toFlowNode(m, progress.get(m.id));
-      const prev = oldNodes.get(m.id);
-      return prev ? { ...prev, position: fresh.position, data: fresh.data } : fresh;
-    }),
-    edges: data.edges.map((e) => {
-      const fresh = toFlowEdge(e);
-      const prev = oldEdges.get(e.id);
-      return prev?.selected ? { ...fresh, selected: true } : fresh;
-    }),
-  };
-}
-
 /** После undo/redo: перечитать уровни стека, просвечивание; исчезнувший слой — закрыть. */
-async function refreshOpen() {
-  const { layers } = graph();
-  const fresh: Record<string, CanvasData> = {};
-  let gone = -1;
-  for (let i = 0; i < layers.length; i++) {
-    try {
-      fresh[layers[i]] = await api.loadCanvas(layers[i]);
-    } catch {
-      gone = i;
-      break;
-    }
-  }
-  useGraph.setState((s) => {
-    const canvases = { ...s.canvases };
-    for (const [cid, data] of Object.entries(fresh)) canvases[cid] = mergeView(s.canvases[cid], data);
-    // Остальные кэшированные холсты всё равно перечитываются при входе в слой.
-    for (const cid of Object.keys(canvases)) if (!s.layers.includes(cid)) delete canvases[cid];
-    const editing = s.editingNodeId;
-    const alive =
-      editing && Object.values(canvases).some((v) => v.nodes.some((n) => n.id === editing));
-    return { canvases, editingNodeId: alive ? editing : null };
-  });
-  if (gone > 0) await graph().exitTo(gone - 1);
-  else await graph().refreshSubtree();
-}
+const refreshOpen = () => graph().reloadOpen();
 
 function showHint(text: string) {
   clearTimeout(hintTimer);
@@ -481,6 +475,32 @@ export function installHistory() {
       if (old?.status && old.status !== status) {
         record(patchStep(old, { status: old.status }, { status }, true));
       }
+    },
+
+    deleteWith: async (ids, edgeIds, mode) => {
+      const titles = ids
+        .map((id) => Object.values(graph().canvases).flatMap((v) => v.nodes).find((n) => n.id === id))
+        .filter(Boolean)
+        .map((n) => n!.data.model.title || "без названия");
+      const change = await orig.deleteWith(ids, edgeIds, mode);
+      if (change) {
+        const what = titles.length === 1 ? `удаление «${titles[0]}»` : `удаление ${ids.length} нод`;
+        const how = mode === "lift" ? "подзадачи — на уровень выше" : "слой без родителя";
+        record(regionStep(`${what} (${how})`, change));
+      }
+      return change;
+    },
+
+    moveIntoTask: async (ids, target) => {
+      const t = Object.values(graph().canvases)
+        .flatMap((v) => v.nodes)
+        .find((n) => n.id === target)?.data.model.title;
+      const change = await orig.moveIntoTask(ids, target);
+      if (change) {
+        const what = ids.length === 1 ? "перенос" : `перенос ${ids.length} нод`;
+        record(regionStep(t ? `${what} в «${t}»` : `${what} в задачу`, change));
+      }
+      return change;
     },
 
     deleteSpace: async (spaceId) => {

@@ -28,6 +28,8 @@ export function SettingsPanel({ anchor, onClose }: Props) {
   const setStatusColor = useGraph((s) => s.setStatusColor);
   const showNested = useGraph((s) => s.showNested);
   const setShowNested = useGraph((s) => s.setShowNested);
+  const moveWithSubtasks = useGraph((s) => s.moveWithSubtasks);
+  const setMoveWithSubtasks = useGraph((s) => s.setMoveWithSubtasks);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -96,6 +98,14 @@ export function SettingsPanel({ anchor, onClose }: Props) {
           onChange={(e) => void setShowNested(e.target.checked)}
         />
         <span>Показывать вложенные уровни</span>
+      </label>
+      <label className="st-check" title="Перетаскивание задачи двигает и все её подзадачи (координаты слоёв общие)">
+        <input
+          type="checkbox"
+          checked={moveWithSubtasks}
+          onChange={(e) => void setMoveWithSubtasks(e.target.checked)}
+        />
+        <span>Всегда двигать задачу вместе с подзадачами</span>
       </label>
       <div className="st-divider" />
       <VaultSetting />
