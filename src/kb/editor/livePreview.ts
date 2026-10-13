@@ -12,7 +12,8 @@ import { StateEffect, StateField, type EditorState, type Range } from "@codemirr
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 
-import { parseWiki, resolveLink } from "../paths";
+import { hydrateImages, imageUrl, parseEmbedSize } from "../images";
+import { isImage, parseWiki, resolveLink } from "../paths";
 import { renderMarkdown } from "../reading";
 
 /** Принудительный пересчёт (изменился список заметок → «не найдена» у ссылок). */
@@ -20,7 +21,52 @@ export const refreshDecos = StateEffect.define<null>();
 
 export interface PreviewCtx {
   notes: () => string[];
+  /** Картинки vault: цели `![[…]]` и `![](…)`. */
+  images: () => string[];
   source: () => string;
+}
+
+/** Картинка vault в тексте (`![[img.png|300]]`, `![alt](img.png)`), M6c. */
+class ImageWidget extends WidgetType {
+  constructor(
+    readonly path: string,
+    readonly alt: string,
+    readonly width: number | undefined,
+    readonly height: number | undefined,
+    readonly block: boolean,
+  ) {
+    super();
+  }
+  eq(o: ImageWidget) {
+    return (
+      o.path === this.path &&
+      o.alt === this.alt &&
+      o.width === this.width &&
+      o.height === this.height &&
+      o.block === this.block
+    );
+  }
+  toDOM(view: EditorView) {
+    const wrap = document.createElement(this.block ? "div" : "span");
+    wrap.className = this.block ? "cm-lp-image cm-lp-image-block" : "cm-lp-image";
+    const img = document.createElement("img");
+    img.alt = this.alt;
+    img.draggable = false;
+    if (this.width) img.style.width = `${this.width}px`;
+    if (this.height) img.style.height = `${this.height}px`;
+    img.addEventListener("load", () => view.requestMeasure());
+    img.addEventListener("error", () => wrap.classList.add("is-broken"));
+    imageUrl(this.path).then(
+      (url) => (img.src = url),
+      () => wrap.classList.add("is-broken"),
+    );
+    wrap.append(img);
+    return wrap;
+  }
+  ignoreEvent(e: Event) {
+    // Клик по картинке ставит курсор в её исходник (показывается синтаксис).
+    return e.type !== "mousedown";
+  }
 }
 
 class BulletWidget extends WidgetType {
@@ -98,6 +144,7 @@ class TableWidget extends WidgetType {
     readonly src: string,
     readonly notes: string[],
     readonly source: string,
+    readonly images: string[],
   ) {
     super();
   }
@@ -107,7 +154,8 @@ class TableWidget extends WidgetType {
   toDOM() {
     const wrap = document.createElement("div");
     wrap.className = "cm-lp-table";
-    wrap.innerHTML = renderMarkdown(this.src, this.notes, this.source);
+    wrap.innerHTML = renderMarkdown(this.src, this.notes, this.source, this.images);
+    hydrateImages(wrap);
     return wrap;
   }
   ignoreEvent(e: Event) {
@@ -138,6 +186,8 @@ function build(state: EditorState, ctx: PreviewCtx): DecorationSet {
   const doc = state.doc;
   const ranges = state.selection.ranges;
   const notes = ctx.notes();
+  const images = ctx.images();
+  const files = [...notes, ...images];
   const source = ctx.source();
   const out: Range<Decoration>[] = [];
 
@@ -162,6 +212,34 @@ function build(state: EditorState, ctx: PreviewCtx): DecorationSet {
     let end = n.to;
     if (doc.sliceString(end, end + 1) === " ") end++;
     hide(n.from, end);
+  };
+
+  /**
+   * Картинка: вне строки курсора заменяет синтаксис (true); в строке курсора
+   * синтаксис остаётся, а под строкой показывается превью (false).
+   */
+  const addImage = (
+    from: number,
+    to: number,
+    path: string,
+    alt: string,
+    width: number | undefined,
+    height: number | undefined,
+  ): boolean => {
+    if (!touched(from, to)) {
+      out.push(
+        Decoration.replace({ widget: new ImageWidget(path, alt, width, height, false) }).range(from, to),
+      );
+      return true;
+    }
+    out.push(
+      Decoration.widget({
+        widget: new ImageWidget(path, alt, width, height, true),
+        block: true,
+        side: 1,
+      }).range(doc.lineAt(to).to),
+    );
+    return false;
   };
 
   syntaxTree(state).iterate({
@@ -307,8 +385,27 @@ function build(state: EditorState, ctx: PreviewCtx): DecorationSet {
           }
           return;
         }
-        case "Image":
+        case "Image": {
+          // `![alt](путь)`: локальная картинка vault -> виджет (вне строки курсора),
+          // удалённые адреса не грузим (без сети).
+          const url = node.getChild("URL");
+          const marks = node.getChildren("LinkMark");
+          if (!url || marks.length < 2) return false;
+          let href = doc.sliceString(url.from, url.to).trim().replace(/^<|>$/g, "");
+          href = href.split("#")[0];
+          try {
+            href = decodeURI(href);
+          } catch {
+            // как есть
+          }
+          if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href)) return false;
+          const found = resolveLink(files, href, source);
+          if (!found || !isImage(found)) return false;
+          const alt = doc.sliceString(marks[0].to, marks[1].from);
+          const { width, height } = parseEmbedSize(/^\d+(x\d+)?$/.test(alt) ? alt : null);
+          addImage(node.from, node.to, found, /^\d+(x\d+)?$/.test(alt) ? "" : alt, width, height);
           return false;
+        }
         case "URL": {
           const p = node.parent?.name;
           if (p === "Link" || p === "Image") return;
@@ -324,11 +421,22 @@ function build(state: EditorState, ctx: PreviewCtx): DecorationSet {
           return;
         }
         case "WikiLink": {
-          const innerFrom = node.from + 2;
+          const embed = doc.sliceString(node.from, node.from + 1) === "!";
+          const innerFrom = node.from + (embed ? 3 : 2);
           const innerTo = node.to - 2;
           const inner = doc.sliceString(innerFrom, innerTo);
-          const { target } = parseWiki(inner);
-          const ok = !target || resolveLink(notes, target, source) != null;
+          const { target, alias } = parseWiki(inner);
+          // `![[картинка.png|300]]`: встраивание картинки vault.
+          if (embed && target) {
+            const found = resolveLink(files, target, source);
+            if (found && isImage(found)) {
+              const { width, height } = parseEmbedSize(alias);
+              if (addImage(node.from, node.to, found, alias && !width ? alias : "", width, height)) {
+                return false;
+              }
+            }
+          }
+          const ok = !target || resolveLink(files, target, source) != null;
           const cls = ok ? "cm-lp-wikilink" : "cm-lp-wikilink is-unresolved";
           const attrs = { "data-target": inner };
           if (!touched(node.from, node.to)) {
@@ -352,7 +460,7 @@ function build(state: EditorState, ctx: PreviewCtx): DecorationSet {
             const to = doc.lineAt(node.to).to;
             out.push(
               Decoration.replace({
-                widget: new TableWidget(doc.sliceString(from, to), notes, source),
+                widget: new TableWidget(doc.sliceString(from, to), notes, source, images),
                 block: true,
               }).range(from, to),
             );

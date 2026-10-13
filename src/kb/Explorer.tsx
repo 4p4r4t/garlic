@@ -22,6 +22,7 @@ import {
   Flag,
   FolderOpen,
   FolderPlus,
+  Image as ImageIcon,
   PanelRight,
   Pencil,
   Trash2,
@@ -32,7 +33,7 @@ import { StatusIcon, STATUS_META } from "../canvas/NodeParts";
 import { useGraph } from "../store/graph";
 import { revealGraphNode } from "../store/mode";
 import { ContextMenu, type MenuEntry } from "./ContextMenu";
-import { baseName, isUnder, noteName, parentDir } from "./paths";
+import { baseName, isImage, isUnder, noteName, parentDir } from "./paths";
 import { filterTree, resultAncestors, taskPathLabel, useResults } from "./results";
 import { useKb } from "./store";
 
@@ -63,6 +64,9 @@ export async function revealInOs(path: string) {
 
 export function confirmDelete(entry: { path: string; isFolder: boolean }): boolean {
   const name = entry.isFolder ? baseName(entry.path) : noteName(entry.path);
+  if (!entry.isFolder && isImage(entry.path)) {
+    return window.confirm(`Удалить картинку «${name}»? Она попадёт в корзину.`);
+  }
   return window.confirm(
     entry.isFolder
       ? `Удалить папку «${name}» со всем содержимым? Она попадёт в корзину.`
@@ -248,7 +252,10 @@ function TreeItem({
 
   const onDragStart = (e: DragEvent) => {
     e.dataTransfer.setData(DRAG_TYPE, entry.path);
-    e.dataTransfer.setData("text/plain", `[[${noteName(entry.path)}]]`);
+    e.dataTransfer.setData(
+      "text/plain",
+      isImage(entry.path) ? `![[${baseName(entry.path)}]]` : `[[${noteName(entry.path)}]]`,
+    );
     e.dataTransfer.effectAllowed = "move";
   };
 
@@ -282,7 +289,7 @@ function TreeItem({
         tabIndex={-1}
         className={[
           "kb-tree-item",
-          isFolder ? "is-folder" : "is-note",
+          isFolder ? "is-folder" : isImage(entry.path) ? "is-note is-image" : "is-note",
           selected ? "is-selected" : "",
           active ? "is-active" : "",
           drop ? "is-drop" : "",
@@ -303,6 +310,8 @@ function TreeItem({
       >
         {isFolder ? (
           <ChevronRight size={14} className={expanded ? "kb-chevron is-open" : "kb-chevron"} />
+        ) : isImage(entry.path) ? (
+          <ImageIcon size={13} className="kb-tree-image-icon" />
         ) : (
           <span className="kb-chevron-space" />
         )}

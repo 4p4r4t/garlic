@@ -10,6 +10,7 @@ import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { classHighlighter } from "@lezer/highlight";
 
+import { embedText, imageFiles, saveImageFiles } from "../images";
 import { livePreview, refreshDecos } from "./livePreview";
 import { obsidianTheme } from "./theme";
 import { autoCloseWiki, wikiCompletion, WikiLinkSyntax } from "./wikilink";
@@ -20,6 +21,11 @@ export interface EditorCtx {
   /** Путь заметки (меняется при переименовании). */
   source: () => string;
   notes: () => string[];
+  /** Картинки vault (`![[…]]`, `![](…)`). */
+  images: () => string[];
+  /** После сохранения вложения: обновить дерево vault (новый файл должен разрешаться). */
+  afterAttach: () => Promise<void>;
+  showError: (e: unknown) => void;
   /** Переход по ссылке: вики-цель/путь, `newTab` — Ctrl+клик. */
   openLink: (target: string, newTab: boolean) => void;
   onChange: () => void;
@@ -77,6 +83,52 @@ function linkClicks(ctx: EditorCtx): Extension {
   });
 }
 
+/**
+ * Вставка из буфера обмена и перетаскивание файлов-картинок: сохраняются в папку
+ * вложений, в текст вставляется `![[имя]]` (M6c).
+ */
+function imageDrops(ctx: EditorCtx): Extension {
+  const insert = async (view: EditorView, files: File[], keepName: boolean, at: number | null) => {
+    try {
+      const saved = await saveImageFiles(files, keepName);
+      await ctx.afterAttach();
+      const text = embedText([...ctx.notes(), ...ctx.images()], saved, ctx.source());
+      const sel = view.state.selection.main;
+      const from = Math.min(at ?? sel.from, view.state.doc.length);
+      const to = at == null ? Math.min(sel.to, view.state.doc.length) : from;
+      view.dispatch({
+        changes: { from, to, insert: text },
+        selection: { anchor: from + text.length },
+        userEvent: "input.paste",
+      });
+    } catch (e) {
+      ctx.showError(e);
+    }
+  };
+  return EditorView.domEventHandlers({
+    paste(e, view) {
+      const files = imageFiles(e.clipboardData?.files);
+      if (!files.length) return false;
+      e.preventDefault();
+      void insert(view, files, false, null);
+      return true;
+    },
+    dragover(e) {
+      if (!e.dataTransfer?.types.includes("Files")) return false;
+      e.preventDefault();
+      return true;
+    },
+    drop(e, view) {
+      const files = imageFiles(e.dataTransfer?.files);
+      if (!files.length) return false;
+      e.preventDefault();
+      const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+      void insert(view, files, true, pos);
+      return true;
+    },
+  });
+}
+
 export function buildExtensions(ctx: EditorCtx): Extension[] {
   return [
     history(),
@@ -89,7 +141,7 @@ export function buildExtensions(ctx: EditorCtx): Extension[] {
       extensions: [WikiLinkSyntax],
     }),
     syntaxHighlighting(classHighlighter),
-    livePreview({ notes: ctx.notes, source: ctx.source }),
+    livePreview({ notes: ctx.notes, images: ctx.images, source: ctx.source }),
     autocompletion({
       override: [wikiCompletion({ notes: ctx.notes, source: ctx.source })],
       icons: false,
@@ -107,6 +159,7 @@ export function buildExtensions(ctx: EditorCtx): Extension[] {
       ...defaultKeymap,
     ]),
     linkClicks(ctx),
+    imageDrops(ctx),
     EditorView.updateListener.of((u) => {
       if (u.docChanged) ctx.onChange();
     }),

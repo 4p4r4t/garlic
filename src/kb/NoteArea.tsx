@@ -5,7 +5,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BookOpen, ChevronRight, Pencil, Plus, X } from "lucide-react";
 
 import { openExternal } from "./editor/setup";
-import { noteName, parentDir } from "./paths";
+import { hydrateImages, imageUrl, useImageRev } from "./images";
+import { isImage, noteName, parentDir } from "./paths";
 import { highlightIn, renderMarkdown, taskLines } from "./reading";
 import { docs, useDocMeta, useKb, type Tab } from "./store";
 
@@ -96,6 +97,7 @@ function NotePane({ tab, active }: { tab: Tab; active: boolean }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const dir = parentDir(tab.path);
   const kb = useKb.getState;
+  const image = isImage(tab.path);
 
   return (
     <div className={active ? "kb-pane is-active" : "kb-pane"} aria-hidden={!active}>
@@ -117,19 +119,24 @@ function NotePane({ tab, active }: { tab: Tab; active: boolean }) {
             {noteName(tab.path)}
           </span>
         </div>
-        <div className="kb-view-actions">
-          <button
-            type="button"
-            className="kb-view-action"
-            title={tab.reading ? "Редактировать (Ctrl+E)" : "Режим чтения (Ctrl+E)"}
-            onClick={() => kb().toggleReading(tab.id)}
-          >
-            {tab.reading ? <Pencil size={16} /> : <BookOpen size={16} />}
-          </button>
-        </div>
+        {!image && (
+          <div className="kb-view-actions">
+            <button
+              type="button"
+              className="kb-view-action"
+              title={tab.reading ? "Редактировать (Ctrl+E)" : "Режим чтения (Ctrl+E)"}
+              onClick={() => kb().toggleReading(tab.id)}
+            >
+              {tab.reading ? <Pencil size={16} /> : <BookOpen size={16} />}
+            </button>
+          </div>
+        )}
       </div>
       {meta.conflict && <ConflictBanner id={tab.id} />}
       {meta.missing && <MissingBanner id={tab.id} />}
+      {image ? (
+        <ImageView path={tab.path} />
+      ) : (
       <div ref={scrollRef} className="kb-view-content">
         {meta.error ? (
           <div className="kb-load-error">Не удалось открыть: {meta.error}</div>
@@ -144,6 +151,43 @@ function NotePane({ tab, active }: { tab: Tab; active: boolean }) {
           </>
         )}
       </div>
+      )}
+    </div>
+  );
+}
+
+/** Вкладка-просмотр картинки vault (M6c). */
+function ImageView({ path }: { path: string }) {
+  const rev = useImageRev((s) => s.rev);
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [fit, setFit] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    setFailed(null);
+    imageUrl(path).then(
+      (url) => alive && setSrc(url),
+      (e) => alive && setFailed(String(e)),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [path, rev]);
+  return (
+    <div className="kb-view-content kb-image-view" onDoubleClick={() => setFit((v) => !v)}>
+      {failed ? (
+        <div className="kb-load-error">Не удалось открыть: {failed}</div>
+      ) : (
+        src && (
+          <img
+            src={src}
+            alt={noteName(path)}
+            draggable={false}
+            className={fit ? "kb-image-fit" : "kb-image-full"}
+            title="Двойной клик — реальный размер / по размеру окна"
+          />
+        )
+      )}
     </div>
   );
 }
@@ -258,17 +302,19 @@ function EditorHost({ id, loaded, active }: { id: string; loaded: boolean; activ
 function ReadingView({ tab, version }: { tab: Tab; version: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const notes = useKb((s) => s.notes);
+  const images = useKb((s) => s.images);
 
   useEffect(() => {
     const el = ref.current;
     const doc = docs.get(tab.id);
     if (!el || !doc) return;
-    el.innerHTML = renderMarkdown(doc.text, notes, tab.path);
+    el.innerHTML = renderMarkdown(doc.text, notes, tab.path, images);
+    hydrateImages(el);
     el.querySelectorAll<HTMLInputElement>("input.rd-task").forEach((box, i) => {
       box.dataset.task = String(i);
     });
     void highlightIn(el);
-  }, [tab.id, tab.path, version, notes]);
+  }, [tab.id, tab.path, version, notes, images]);
 
   const onClick = (e: React.MouseEvent) => {
     const t = e.target as HTMLElement;

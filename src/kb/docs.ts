@@ -42,6 +42,9 @@ export const EMPTY_META: DocMeta = {
 export interface DocHooks {
   meta: (id: string, meta: DocMeta) => void;
   notes: () => string[];
+  images: () => string[];
+  /** Обновить дерево vault (после сохранения вложения). */
+  reloadTree: () => Promise<void>;
   openLink: (target: string, source: string, newTab: boolean) => void;
   showError: (e: unknown) => void;
 }
@@ -86,6 +89,9 @@ export class NoteDoc {
       const ctx: EditorCtx = {
         source: () => this.path,
         notes: () => this.hooks.notes(),
+        images: () => this.hooks.images(),
+        afterAttach: () => this.hooks.reloadTree(),
+        showError: (e) => this.hooks.showError(e),
         openLink: (target, newTab) => this.hooks.openLink(target, this.path, newTab),
         onChange: () => this.onChange(),
       };

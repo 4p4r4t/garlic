@@ -7,9 +7,11 @@ import { create } from "zustand";
 import { api, APP_STATE, type VaultEntry, type VaultEvent } from "../api";
 import { useGraph } from "../store/graph";
 import { EMPTY_META, NoteDoc, type DocMeta, type Reveal } from "./docs";
+import { invalidateImages } from "./images";
 import {
   ancestors,
   flatten,
+  isImage,
   isMd,
   isUnder,
   joinPath,
@@ -56,6 +58,8 @@ interface KbState {
   tree: VaultEntry[];
   notes: string[];
   folders: string[];
+  /** Картинки vault (png/jpg/gif/webp/svg). */
+  images: string[];
 
   tabs: Tab[];
   activeId: string | null;
@@ -164,6 +168,8 @@ export const useKb = create<KbState>()((set, get) => {
     new NoteDoc(id, path, {
       meta: (docId, meta) => set((s) => ({ meta: { ...s.meta, [docId]: meta } })),
       notes: () => get().notes,
+      images: () => get().images,
+      reloadTree: () => get().reloadTree(),
       openLink: (target, source, newTab) => void get().openLink(target, source, newTab),
       showError,
     });
@@ -216,6 +222,7 @@ export const useKb = create<KbState>()((set, get) => {
     tree: [],
     notes: [],
     folders: [],
+    images: [],
     tabs: [],
     activeId: null,
     meta: {},
@@ -253,13 +260,14 @@ export const useKb = create<KbState>()((set, get) => {
         resultsOnly: ui.resultsOnly === true,
       });
       await get().reloadTree();
-      const known = new Set(get().notes);
+      const known = new Set([...get().notes, ...get().images]);
       const tabs: Tab[] = (Array.isArray(ui.tabs) ? ui.tabs : [])
         .filter((t) => t && typeof t.path === "string" && known.has(t.path))
         .map((t) => ({ id: newTabId(), path: t.path, reading: !!t.reading }));
       const active = tabs[Math.min(ui.active ?? 0, tabs.length - 1)]?.id ?? null;
       set({ tabs, activeId: active, ready: true });
       for (const t of tabs) {
+        if (isImage(t.path)) continue; // вкладка-просмотр картинки без NoteDoc
         const doc = makeDoc(t.id, t.path);
         docs.set(t.id, doc);
         void doc.load();
@@ -269,11 +277,11 @@ export const useKb = create<KbState>()((set, get) => {
     reloadTree: async () => {
       try {
         const tree = await api.vaultTree();
-        const { notes, folders } = flatten(tree);
-        set({ tree, notes, folders, error: null });
+        const { notes, folders, images } = flatten(tree);
+        set({ tree, notes, folders, images, error: null });
         docs.forEach((d) => d.refreshLinks());
       } catch (e) {
-        set({ error: String(e), tree: [], notes: [], folders: [] });
+        set({ error: String(e), tree: [], notes: [], folders: [], images: [] });
       }
     },
 
@@ -314,10 +322,11 @@ export const useKb = create<KbState>()((set, get) => {
         tabs = [...s.tabs];
         tabs.splice(idx + 1, 0, tab);
       }
-      const doc = makeDoc(id, path);
-      docs.set(id, doc);
       set({ tabs, activeId: id, selected: path });
       persist();
+      if (isImage(path)) return; // просмотр картинки: NoteDoc не нужен
+      const doc = makeDoc(id, path);
+      docs.set(id, doc);
       await doc.load(opts.reveal ?? null);
     },
 
@@ -359,7 +368,7 @@ export const useKb = create<KbState>()((set, get) => {
         if (tab && reveal) docs.get(tab.id)?.reveal(reveal);
         return;
       }
-      const found = resolveLink(get().notes, target, source);
+      const found = resolveLink([...get().notes, ...get().images], target, source);
       if (found) {
         await get().openNote(found, { newTab, reveal });
         return;
@@ -444,8 +453,9 @@ export const useKb = create<KbState>()((set, get) => {
     rename: async (path, newName) => {
       const name = newName.trim();
       if (!name) return null;
-      // Несохранённое — сначала на диск, потом переименование.
-      for (const t of get().tabs) if (isUnder(t.path, path)) await docs.get(t.id)?.flush();
+      // Несохранённое — сначала на диск, потом переименование (ссылки в других
+      // заметках тоже могут быть переписаны — сохраняем всё).
+      await flushAllDocs();
       try {
         const to = await api.vaultRename(path, name);
         if (to !== path) rebaseAll(path, to);
@@ -459,7 +469,7 @@ export const useKb = create<KbState>()((set, get) => {
 
     move: async (path, newDir) => {
       if (parentDir(path) === newDir || isUnder(newDir, path)) return null;
-      for (const t of get().tabs) if (isUnder(t.path, path)) await docs.get(t.id)?.flush();
+      await flushAllDocs();
       try {
         const to = await api.vaultMove(path, newDir);
         rebaseAll(path, to);
@@ -486,6 +496,7 @@ export const useKb = create<KbState>()((set, get) => {
     },
 
     applyVaultEvents: (events) => {
+      invalidateImages(events.flatMap((e) => (e.from ? [e.from, e.path] : [e.path])));
       for (const e of events) {
         if (e.kind === "rename" && e.from) {
           rebaseAll(e.from, e.path);

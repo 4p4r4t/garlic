@@ -1228,3 +1228,105 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* ---- M6c: картинки в заметках ---- */
+.cm-lp-image {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: bottom;
+  line-height: 0;
+}
+.cm-lp-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  background: var(--kb-code-bg);
+}
+.cm-lp-image-block {
+  display: block;
+  margin: 4px 0 6px;
+  opacity: 0.85;
+}
+.cm-lp-image.is-broken {
+  min-width: 80px;
+  min-height: 24px;
+  line-height: 1.4;
+  color: var(--kb-text-faint);
+  font-size: 12px;
+  border: 1px dashed #555;
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+.cm-lp-image.is-broken img {
+  display: none;
+}
+.cm-lp-image.is-broken::before {
+  content: "Не удалось загрузить картинку";
+}
+.kb-reading img.rd-img,
+.cm-lp-table img.rd-img {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  vertical-align: bottom;
+}
+img.rd-img.is-broken {
+  min-width: 80px;
+  min-height: 24px;
+  border: 1px dashed #555;
+}
+.kb-image-view {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 40px;
+}
+.kb-image-view img {
+  border-radius: 4px;
+  background: repeating-conic-gradient(#2a2a2a 0% 25%, #232323 0% 50%) 0 / 16px 16px;
+  cursor: zoom-in;
+}
+.kb-image-view img.kb-image-fit {
+  max-width: 100%;
+  max-height: calc(100% - 8px);
+  object-fit: contain;
+}
+.kb-image-view img.kb-image-full {
+  max-width: none;
+  cursor: zoom-out;
+}
+.kb-tree-image-icon {
+  flex: none;
+  width: 14px;
+  margin-right: 0;
+  color: var(--kb-text-faint);
+}
+
+/* Уведомление (не ошибка): «Обновлено ссылок: N». */
+.app-notice {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: 70;
+  transform: translate(-50%, 8px);
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #2b2742;
+  border: 1px solid #4a4380;
+  color: #d9d4ff;
+  font-size: 13px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.18s,
+    transform 0.18s;
+}
+.app-notice.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
+  transform: translate(-50%, 0);
+}

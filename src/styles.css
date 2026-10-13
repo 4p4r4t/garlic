@@ -1997,3 +1997,19 @@ button.kb-link.is-path.is-note:hover {
 .st-folder-row .st-folder-btn {
   max-width: 150px;
 }
+
+/* M6c: поле ввода в настройках (папка вложений) */
+.st-input {
+  width: 150px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+}
+.st-input:focus {
+  outline: none;
+  border-color: #7f6df2;
+}

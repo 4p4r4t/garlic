@@ -144,10 +144,10 @@ export interface SpaceTask {
 
 // ---- база знаний (ТЗ §4.10), src-tauri/src/vault/mod.rs ----
 
-export type VaultEntryKind = "folder" | "note";
+export type VaultEntryKind = "folder" | "note" | "image";
 
 export interface VaultEntry {
-  /** Имя на диске (у заметки — с `.md`). */
+  /** Имя на диске (у заметки — с `.md`, у картинки — с расширением). */
   name: string;
   /** Путь относительно корня vault, разделитель `/`. */
   path: string;
@@ -193,6 +193,14 @@ export interface VaultEvent {
   from: string | null;
   /** Папка (у удалённого всегда false). */
   isDir: boolean;
+}
+
+/** Итог переписывания ссылок при переименовании (событие `vault:links-updated`). */
+export interface RelinkReport {
+  /** Сколько ссылок переписано. */
+  links: number;
+  /** Заметки с переписанными ссылками (пути после переноса). */
+  files: string[];
 }
 
 export interface VaultInfo {

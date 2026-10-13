@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { Ban, Folder, FolderOpen, Home } from "lucide-react";
 
-import { api, type LinkRole, type TaskStatus, type VaultInfo } from "../api";
+import {
+  api,
+  APP_STATE,
+  DEFAULT_ATTACHMENTS_FOLDER,
+  type LinkRole,
+  type TaskStatus,
+  type VaultInfo,
+} from "../api";
 import { KbPicker } from "../canvas/KbPicker";
 import { StatusIcon, STATUS_META } from "../canvas/NodeParts";
 import { PALETTE } from "../canvas/palette";
@@ -155,6 +162,75 @@ function VaultSetting() {
       </button>
       <div className="st-hint">Обычные .md-файлы; можно выбрать существующий vault Obsidian.</div>
       <DefaultFolderSetting />
+      <NoteBehaviorSettings />
+    </div>
+  );
+}
+
+/** Обновление ссылок при переименовании и папка вложений (M6c). */
+function NoteBehaviorSettings() {
+  const showError = useGraph((s) => s.showError);
+  const [updateLinks, setUpdateLinks] = useState(true);
+  const [folder, setFolder] = useState(DEFAULT_ATTACHMENTS_FOLDER);
+
+  useEffect(() => {
+    let alive = true;
+    void Promise.all([
+      api.getAppState(APP_STATE.kbUpdateLinks),
+      api.getAppState(APP_STATE.kbAttachmentsFolder),
+    ])
+      .then(([links, att]) => {
+        if (!alive) return;
+        setUpdateLinks(links !== "0");
+        if (att != null && att.trim()) setFolder(att);
+      })
+      .catch(showError);
+    return () => {
+      alive = false;
+    };
+  }, [showError]);
+
+  const toggleLinks = (on: boolean) => {
+    setUpdateLinks(on);
+    api.setAppState(APP_STATE.kbUpdateLinks, on ? "1" : "0").catch(showError);
+  };
+  const commitFolder = () => {
+    // Относительный путь внутри vault: без обратных слэшей, `..` и краевых `/`.
+    const clean = folder
+      .replace(/\\/g, "/")
+      .split("/")
+      .map((p) => p.trim())
+      .filter((p) => p && p !== "." && p !== "..")
+      .join("/");
+    const value = clean || DEFAULT_ATTACHMENTS_FOLDER;
+    setFolder(value);
+    api.setAppState(APP_STATE.kbAttachmentsFolder, value).catch(showError);
+  };
+
+  return (
+    <div className="st-folder">
+      <label className="st-check">
+        <input type="checkbox" checked={updateLinks} onChange={(e) => toggleLinks(e.target.checked)} />
+        <span>Обновлять ссылки при переименовании</span>
+      </label>
+      <div className="st-hint">
+        При переименовании и перемещении заметки (и картинки) в приложении ссылки на неё в других
+        заметках исправляются.
+      </div>
+      <div className="st-folder-row">
+        <div className="st-subtitle">Папка вложений</div>
+        <input
+          className="st-input"
+          value={folder}
+          spellCheck={false}
+          title="Сюда сохраняются картинки, вставленные из буфера или перетащенные в заметку (создаётся при первом использовании)"
+          onChange={(e) => setFolder(e.target.value)}
+          onBlur={commitFolder}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.currentTarget.blur();
+          }}
+        />
+      </div>
     </div>
   );
 }
