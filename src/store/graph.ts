@@ -178,6 +178,8 @@ interface GraphState {
   rewriteKbPaths: (from: string, to: string) => void;
   /** Перечитать просвечивающие уровни верхнего холста. */
   refreshSubtree: () => Promise<void>;
+  /** Отправить отложенные записи (перемещения, вьюпорт) сразу — перед undo/redo (M6a). */
+  flushWrites: () => void;
 }
 
 /** Имя файла заметки без .md; не заметка — null. */
@@ -741,6 +743,7 @@ export const useGraph = create<GraphState>()((set, get) => {
     },
 
     refreshSubtree,
+    flushWrites: flushAll,
 
     showError: (e) => {
       const msg = errorMessage(e);

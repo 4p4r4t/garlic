@@ -9,10 +9,11 @@ pub const PALETTE: &[&str] = &[
     "red", "orange", "yellow", "green", "teal", "blue", "violet", "gray",
 ];
 
-const COLS: &str = "id, canvas_id, kind, title, body, status, color, x, y, width, height,
+pub(crate) const COLS: &str =
+    "id, canvas_id, kind, title, body, status, color, x, y, width, height,
                     created_at, updated_at, kb_path, kb_result_path";
 
-fn from_row(r: &Row<'_>) -> rusqlite::Result<Node> {
+pub(crate) fn from_row(r: &Row<'_>) -> rusqlite::Result<Node> {
     Ok(Node {
         id: r.get(0)?,
         canvas_id: r.get(1)?,

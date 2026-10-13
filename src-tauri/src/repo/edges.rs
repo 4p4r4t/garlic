@@ -4,7 +4,7 @@ use super::{canvases, new_id, nodes, parse_col};
 use crate::error::{AppError, AppResult};
 use crate::model::{Edge, HandleSide, NewEdge};
 
-const COLS: &str = "id, canvas_id, source, target, source_handle, target_handle, label";
+pub(crate) const COLS: &str = "id, canvas_id, source, target, source_handle, target_handle, label";
 
 fn handle_col(r: &Row<'_>, idx: usize) -> rusqlite::Result<Option<HandleSide>> {
     r.get::<_, Option<String>>(idx)?
@@ -12,7 +12,7 @@ fn handle_col(r: &Row<'_>, idx: usize) -> rusqlite::Result<Option<HandleSide>> {
         .transpose()
 }
 
-fn from_row(r: &Row<'_>) -> rusqlite::Result<Edge> {
+pub(crate) fn from_row(r: &Row<'_>) -> rusqlite::Result<Edge> {
     Ok(Edge {
         id: r.get(0)?,
         canvas_id: r.get(1)?,

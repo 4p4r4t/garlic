@@ -10,6 +10,7 @@ import type {
   Canvas,
   CanvasData,
   EdgeModel,
+  GraphSnapshot,
   KbStat,
   LinkRole,
   LinkTarget,
@@ -99,6 +100,13 @@ export const api = {
   // связи
   createEdge: (input: NewEdge) => invoke<EdgeModel>("create_edge", { input }),
   deleteEdges: (ids: string[]) => invoke<number>("delete_edges", { ids }),
+
+  // undo/redo (ТЗ M6a)
+  /** Снимок нод (с поддеревьями подзадач и связями) и связей — перед удалением. */
+  snapshotGraph: (nodeIds: string[], edgeIds: string[]) =>
+    invoke<GraphSnapshot>("snapshot_graph", { nodeIds, edgeIds }),
+  /** Вернуть снимок с теми же id (всё или ничего) → число нод. */
+  restoreGraph: (snapshot: GraphSnapshot) => invoke<number>("restore_graph", { snapshot }),
 
   // состояние приложения
   getAppState: (key: string) => invoke<string | null>("get_app_state", { key }),

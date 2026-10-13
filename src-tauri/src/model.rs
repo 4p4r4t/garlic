@@ -303,3 +303,16 @@ pub struct ResultLink {
     /// Цепочка холстов от корневого до холста задачи (для `revealNode`).
     pub canvas_chain: Vec<String>,
 }
+
+/// Снимок части графа для undo/redo (ТЗ M6a): ноды вместе со всеми вложенными
+/// холстами (поддеревья подзадач) и всеми связями, касающимися этих нод, плюс
+/// явно указанные связи. `restore_graph` возвращает всё с теми же id.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphSnapshot {
+    /// Вложенные холсты, по возрастанию глубины.
+    pub canvases: Vec<Canvas>,
+    /// Сначала сами ноды (в порядке запроса), затем ноды вложенных холстов.
+    pub nodes: Vec<Node>,
+    pub edges: Vec<Edge>,
+}

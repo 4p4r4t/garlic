@@ -89,6 +89,16 @@ export interface SubtreeLevel {
   progress: NodeProgress[];
 }
 
+/**
+ * Снимок части графа для undo/redo (ТЗ M6a, `snapshot_graph` / `restore_graph`):
+ * ноды с вложенными холстами всех уровней и всеми касающимися их связями.
+ */
+export interface GraphSnapshot {
+  canvases: Canvas[];
+  nodes: NodeModel[];
+  edges: EdgeModel[];
+}
+
 export interface NewNode {
   canvasId: string;
   kind: NodeKind;

@@ -3,9 +3,13 @@ import { lazy, Suspense, useEffect } from "react";
 import { LayerStack } from "./layers/LayerStack";
 import { TaskOverview } from "./overview/TaskOverview";
 import { useGraph } from "./store/graph";
+import { installHistory, useHistory } from "./store/history";
 import { useKbLinks } from "./store/kbLinks";
 import { useMode } from "./store/mode";
 import { Topbar } from "./topbar/Topbar";
+
+// Undo/Redo графа (ТЗ M6a): обёртки действий стора — до первого рендера.
+installHistory();
 
 // Режим «База» (CodeMirror, markdown) — отдельный чанк, грузится при первом входе.
 const KbMode = lazy(() => import("./kb/KbMode"));
@@ -18,6 +22,7 @@ export default function App() {
   const init = useGraph((s) => s.init);
   const mode = useMode((s) => s.mode);
   const kbMounted = useMode((s) => s.kbMounted);
+  const hint = useHistory((s) => s.hint);
 
   useEffect(() => {
     void init();
@@ -62,6 +67,11 @@ export default function App() {
           </div>
         )}
       </main>
+      {hint && (
+        <div key={hint.id} className="undo-hint" role="status">
+          {hint.text}
+        </div>
+      )}
       {toast && (
         <div className="toast" role="alert" onClick={dismissToast}>
           {toast}

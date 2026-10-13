@@ -8,8 +8,8 @@ use tauri::State;
 
 use crate::error::{AppError, AppResult};
 use crate::model::{
-    Canvas, CanvasData, Edge, NewEdge, NewNode, Node, NodePatch, NodePosition, Space, SubtreeLevel,
-    TaskStatus, Viewport,
+    Canvas, CanvasData, Edge, GraphSnapshot, NewEdge, NewNode, Node, NodePatch, NodePosition,
+    Space, SubtreeLevel, TaskStatus, Viewport,
 };
 use crate::repo;
 
@@ -129,6 +129,24 @@ pub async fn create_edge(db: Cmd<'_>, input: NewEdge) -> AppResult<Edge> {
 #[tauri::command]
 pub async fn delete_edges(db: Cmd<'_>, ids: Vec<String>) -> AppResult<usize> {
     repo::edges::delete_many(&*db.conn()?, &ids)
+}
+
+// ---- undo/redo (ТЗ M6a) ----
+
+/// Снимок нод (с поддеревьями подзадач и всеми их связями) и связей — перед удалением.
+#[tauri::command]
+pub async fn snapshot_graph(
+    db: Cmd<'_>,
+    node_ids: Vec<String>,
+    edge_ids: Vec<String>,
+) -> AppResult<GraphSnapshot> {
+    repo::history::snapshot(&*db.conn()?, &node_ids, &edge_ids)
+}
+
+/// Вернуть снимок с теми же id. Файлы базы знаний не трогаются.
+#[tauri::command]
+pub async fn restore_graph(db: Cmd<'_>, snapshot: GraphSnapshot) -> AppResult<usize> {
+    repo::history::restore(&*db.conn()?, &snapshot)
 }
 
 // ---- состояние приложения ----

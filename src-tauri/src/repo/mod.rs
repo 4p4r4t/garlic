@@ -4,6 +4,7 @@
 pub mod app_state;
 pub mod canvases;
 pub mod edges;
+pub mod history;
 pub mod kb;
 pub mod nodes;
 pub mod spaces;

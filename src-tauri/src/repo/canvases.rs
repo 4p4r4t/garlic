@@ -9,9 +9,9 @@ use crate::model::{Canvas, CanvasData, NodeKind, NodeProgress, SubtreeLevel, Vie
 /// Предел глубины `load_subtree` (защита от слишком тяжёлых запросов).
 pub const MAX_SUBTREE_DEPTH: u32 = 16;
 
-const COLS: &str = "id, space_id, owner_node, viewport_x, viewport_y, zoom";
+pub(crate) const COLS: &str = "id, space_id, owner_node, viewport_x, viewport_y, zoom";
 
-fn from_row(r: &Row<'_>) -> rusqlite::Result<Canvas> {
+pub(crate) fn from_row(r: &Row<'_>) -> rusqlite::Result<Canvas> {
     Ok(Canvas {
         id: r.get(0)?,
         space_id: r.get(1)?,

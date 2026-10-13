@@ -64,6 +64,8 @@ pub fn run() {
             commands::count_descendants,
             commands::create_edge,
             commands::delete_edges,
+            commands::snapshot_graph,
+            commands::restore_graph,
             commands::get_app_state,
             commands::set_app_state,
             commands::list_space_tasks,
