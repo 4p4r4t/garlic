@@ -70,14 +70,21 @@ export const APP_STATE = {
   panelPinned: "overview.pinned",
   /** Ширина боковой панели списков, px. */
   panelWidth: "overview.width",
+  /** "0" — не обновлять ссылки при переименовании (M6c); по умолчанию включено. */
+  kbUpdateLinks: "kb.update_links",
+  /** Папка вложений (картинки из буфера/перетаскивания), M6c; нет — `Вложения`. */
+  kbAttachmentsFolder: "kb.attachments_folder",
 } as const;
 
 /** Папки по умолчанию, пока не заданы в настройках (зеркало kblink.rs). */
 export const DEFAULT_COMMENT_FOLDER = "Задачи";
 export const DEFAULT_RESULT_FOLDER = "Результаты";
+export const DEFAULT_ATTACHMENTS_FOLDER = "Вложения";
 
 /** Tauri-событие watcher'а с пачкой `VaultEvent[]`. */
 export const VAULT_EVENT = "vault:changed";
+/** Tauri-событие с итогом переписывания ссылок (`RelinkReport`), M6c. */
+export const LINKS_EVENT = "vault:links-updated";
 
 export const api = {
   // пространства
@@ -159,6 +166,18 @@ export const api = {
     rawInvoke<SearchHit[]>("vault_search", { query, limit: limit ?? null }),
   vaultBacklinks: (path: string) => rawInvoke<Backlink[]>("vault_backlinks", { path }),
   vaultAbsPath: (path: string) => rawInvoke<string>("vault_abs_path", { path }),
+  /** Байты картинки vault (сырой ответ IPC, без base64). */
+  vaultReadImage: (path: string) => rawInvoke<ArrayBuffer>("vault_read_image", { path }),
+  /**
+   * Сохранить картинку в папку вложений (создаётся на лету) → путь в vault.
+   * Тело запроса — сырые байты, имя — заголовок `x-name`.
+   */
+  vaultSaveAttachment: (name: string, bytes: ArrayBuffer | Uint8Array) =>
+    serialVault(() =>
+      rawInvoke<string>("vault_save_attachment", bytes, {
+        headers: { "x-name": encodeURIComponent(name) },
+      }),
+    ),
   /** Ноды всех пространств, привязанные к path (с ролью ссылки). */
   kbLinkedNodes: (path: string) => invoke<LinkedNode[]>("kb_linked_nodes", { path }),
   /** Все «Результаты» задач (фильтр проводника, ТЗ §4.11). */

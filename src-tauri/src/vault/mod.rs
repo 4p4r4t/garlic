@@ -8,6 +8,7 @@ pub mod names;
 pub mod ops;
 pub mod paths;
 pub mod preview;
+pub mod relink;
 pub mod watcher;
 
 use std::path::{Path, PathBuf};
@@ -21,6 +22,10 @@ use crate::error::{AppError, AppResult};
 pub const VAULT_PATH_KEY: &str = "kb.vault_path";
 /// Ключ app_state: папка по умолчанию для новых заметок из графа (M5.2).
 pub const DEFAULT_FOLDER_KEY: &str = "kb.default_folder";
+/// Ключ app_state: папка для вложений (картинки из буфера/перетаскивания), M6c.
+pub const ATTACHMENTS_KEY: &str = "kb.attachments_folder";
+/// Папка вложений по умолчанию.
+pub const DEFAULT_ATTACHMENTS: &str = "Вложения";
 /// Имя папки vault по умолчанию внутри «Документов».
 pub const DEFAULT_VAULT_DIR: &str = "Garlic Vault";
 
@@ -29,6 +34,15 @@ pub const DEFAULT_VAULT_DIR: &str = "Garlic Vault";
 pub enum EntryKind {
     Folder,
     Note,
+    /// Картинка (png/jpg/gif/webp/svg) — вложение заметок (M6c).
+    Image,
+}
+
+/// Перенос `from` → `to` (файл или папка) для переписывания ссылок.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Move {
+    pub from: String,
+    pub to: String,
 }
 
 /// Элемент дерева vault.

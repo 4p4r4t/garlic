@@ -76,7 +76,7 @@ fn sanitize_and_unique_names() {
 }
 
 #[test]
-fn tree_lists_folders_and_notes_only() {
+fn tree_lists_folders_notes_and_images() {
     let dir = vault();
     let root = dir.path();
     put(root, "b.md", "");
@@ -98,6 +98,7 @@ fn tree_lists_folders_and_notes_only() {
             "Пустая",
             "a.md",
             "b.md",
+            "image.png",
             "Заметка 2.md",
             "Заметка 10.md"
         ]
@@ -107,6 +108,7 @@ fn tree_lists_folders_and_notes_only() {
     assert_eq!(inner[0].path, "Папка/внутри.md");
     assert_eq!(inner[0].kind, EntryKind::Note);
     assert!(tree[2].children.is_none());
+    assert_eq!(tree[4].kind, EntryKind::Image);
 
     let mut all = ops::list_notes(root).unwrap();
     all.sort();

@@ -7,17 +7,27 @@ import { LanguageDescription } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { classHighlighter, highlightCode } from "@lezer/highlight";
 
-import { parseWiki, resolveLink } from "./paths";
+import { parseEmbedSize } from "./images";
+import { isImage, parseWiki, resolveLink } from "./paths";
 
 export const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 interface RenderCtx {
   notes: string[];
+  /** Картинки vault для `![[…]]` и `![](…)`. */
+  images: string[];
   source: string;
 }
 
-let ctx: RenderCtx = { notes: [], source: "" };
+let ctx: RenderCtx = { notes: [], images: [], source: "" };
+
+/** `<img>` картинки vault; сам файл подгружает `hydrateImages` (по `data-vault-src`). */
+function vaultImage(path: string, alt: string, size: { width?: number; height?: number }): string {
+  const w = size.width ? ` width="${size.width}"` : "";
+  const h = size.height ? ` height="${size.height}"` : "";
+  return `<img class="rd-img" data-vault-src="${escapeHtml(path)}" alt="${escapeHtml(alt)}"${w}${h} draggable="false">`;
+}
 
 const SAFE_URL = /^(https?:|mailto:)/i;
 
@@ -25,6 +35,32 @@ const md = new Marked({ gfm: true, breaks: true });
 
 md.use({
   extensions: [
+    {
+      // `![[картинка.png|300]]`; встраивание заметки показывается ссылкой.
+      name: "embed",
+      level: "inline",
+      start(src: string) {
+        const i = src.indexOf("![[");
+        return i < 0 ? undefined : i;
+      },
+      tokenizer(src: string) {
+        const m = /^!\[\[([^[\]\n]+?)\]\]/.exec(src);
+        if (m) return { type: "embed", raw: m[0], inner: m[1] };
+        return undefined;
+      },
+      renderer(token) {
+        const inner = (token as unknown as { inner: string }).inner;
+        const { target, heading, alias } = parseWiki(inner);
+        const found = target ? resolveLink([...ctx.notes, ...ctx.images], target, ctx.source) : null;
+        if (found && isImage(found)) {
+          const size = parseEmbedSize(alias);
+          return vaultImage(found, alias && !size.width ? alias : "", size);
+        }
+        const text = alias ?? (heading ? (target ? `${target} › ${heading}` : heading) : target);
+        const cls = found ? "internal-link" : "internal-link is-unresolved";
+        return `<a class="${cls}" data-target="${escapeHtml(inner)}">${escapeHtml(text)}</a>`;
+      },
+    },
     {
       name: "wikilink",
       level: "inline",
@@ -66,6 +102,20 @@ md.use({
       return `<a class="internal-link" data-target="${escapeHtml(target)}"${t}>${text}</a>`;
     },
     image({ text, href }: Tokens.Image) {
+      // Локальная картинка vault; удалённые адреса не грузим (без сети).
+      let path = href.split("#")[0].replace(/^<|>$/g, "");
+      try {
+        path = decodeURI(path);
+      } catch {
+        // как есть
+      }
+      if (path && !/^[a-z][a-z0-9+.-]*:/i.test(path)) {
+        const found = resolveLink([...ctx.notes, ...ctx.images], path, ctx.source);
+        if (found && isImage(found)) {
+          const sized = /^\d+(x\d+)?$/.test(text);
+          return vaultImage(found, sized ? "" : text, sized ? parseEmbedSize(text) : {});
+        }
+      }
       return `<span class="rd-image" title="${escapeHtml(href)}">🖼 ${escapeHtml(text || href)}</span>`;
     },
     code({ text, lang }: Tokens.Code) {
@@ -79,8 +129,13 @@ md.use({
 });
 
 /** Markdown → HTML (синхронно). `notes`/`source` — для «не найдена» у вики-ссылок. */
-export function renderMarkdown(src: string, notes: string[] = [], source = ""): string {
-  ctx = { notes, source };
+export function renderMarkdown(
+  src: string,
+  notes: string[] = [],
+  source = "",
+  images: string[] = [],
+): string {
+  ctx = { notes, images, source };
   return md.parse(src, { async: false });
 }
 

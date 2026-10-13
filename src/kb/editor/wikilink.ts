@@ -11,8 +11,9 @@ import { EditorView } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import type { MarkdownConfig } from "@lezer/markdown";
 
-import { linkText, noteName, parentDir } from "../paths";
+import { baseName, fileLinkText, linkText, noteName, parentDir } from "../paths";
 
+const BANG = 33; // !
 const OPEN = 91; // [
 const CLOSE = 93; // ]
 
@@ -27,15 +28,18 @@ export const WikiLinkSyntax: MarkdownConfig = {
       name: "WikiLink",
       before: "Link",
       parse(cx, next, pos) {
-        if (next !== OPEN || cx.char(pos + 1) !== OPEN) return -1;
-        for (let i = pos + 2; i < cx.end; i++) {
+        // `![[…]]` — встраивание: узел включает ведущий `!` (иначе его перехватит Image).
+        const embed = next === BANG && cx.char(pos + 1) === OPEN && cx.char(pos + 2) === OPEN;
+        if (!embed && (next !== OPEN || cx.char(pos + 1) !== OPEN)) return -1;
+        const open = embed ? pos + 3 : pos + 2;
+        for (let i = open; i < cx.end; i++) {
           const c = cx.char(i);
           if (c === 10 || c === OPEN) return -1;
           if (c === CLOSE) {
-            if (cx.char(i + 1) !== CLOSE || i === pos + 2) return -1;
+            if (cx.char(i + 1) !== CLOSE || i === open) return -1;
             return cx.addElement(
               cx.elt("WikiLink", pos, i + 2, [
-                cx.elt("WikiLinkMark", pos, pos + 2),
+                cx.elt("WikiLinkMark", pos, open),
                 cx.elt("WikiLinkMark", i, i + 2),
               ]),
             );
@@ -49,6 +53,8 @@ export const WikiLinkSyntax: MarkdownConfig = {
 
 export interface CompletionCtx {
   notes: () => string[];
+  /** Картинки vault: предлагаются после `![[`. */
+  images?: () => string[];
   source: () => string;
 }
 
@@ -59,6 +65,23 @@ export function wikiCompletion(ctx: CompletionCtx) {
     if (!m) return null;
     const notes = ctx.notes();
     const source = ctx.source();
+    const embed = m.from > 0 && c.state.sliceDoc(m.from - 1, m.from) === "!";
+    const images: string[] = embed ? (ctx.images?.() ?? []) : [];
+    const files = [...notes, ...images];
+    const imageOptions: Completion[] = images.map((p) => ({
+      label: baseName(p),
+      detail: parentDir(p) || undefined,
+      type: "text",
+      apply: (view: EditorView, _c: Completion, from: number, to: number) => {
+        const text = fileLinkText(files, p, source);
+        const hasClose = view.state.sliceDoc(to, to + 2) === "]]";
+        view.dispatch({
+          changes: { from, to, insert: hasClose ? text : text + "]]" },
+          selection: { anchor: from + text.length + 2 },
+          userEvent: "input.complete",
+        });
+      },
+    }));
     const options: Completion[] = notes
       .filter((p) => p !== source)
       .map((p) => ({
@@ -75,7 +98,7 @@ export function wikiCompletion(ctx: CompletionCtx) {
           });
         },
       }));
-    return { from: m.from + 2, options, validFor: /^[^[\]|#\n]*$/ };
+    return { from: m.from + 2, options: [...options, ...imageOptions], validFor: /^[^[\]|#\n]*$/ };
   };
 }
 

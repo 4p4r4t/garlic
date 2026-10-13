@@ -7,7 +7,7 @@ import { Circle, CircleCheck, CircleDot, Link2, ListTree, Network, StickyNote } 
 
 import { api, type Backlink, type LinkRole, type LinkedNode } from "../api";
 import { revealGraphNode, useMode } from "../store/mode";
-import { ancestors, noteName, parentDir } from "./paths";
+import { ancestors, isImage, noteName, parentDir } from "./paths";
 import { docs, useDocMeta, useKb, type RightView } from "./store";
 
 const VIEWS: { id: RightView; title: string; icon: React.ReactNode }[] = [
@@ -39,6 +39,8 @@ export function RightPanel() {
       <div className="kb-right-body">
         {!active ? (
           <div className="kb-empty">Нет открытой заметки</div>
+        ) : isImage(active.path) ? (
+          <div className="kb-empty">Это картинка — у неё нет ссылок и оглавления.</div>
         ) : view === "backlinks" ? (
           <Backlinks path={active.path} tabId={active.id} />
         ) : view === "outline" ? (

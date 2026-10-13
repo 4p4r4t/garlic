@@ -90,6 +90,8 @@ pub fn run() {
             commands::kb_create_target,
             commands::kb_note_to_folder,
             commands::kb_stat,
+            commands::vault_read_image,
+            commands::vault_save_attachment,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска приложения Garlic");

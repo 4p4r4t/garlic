@@ -4,6 +4,10 @@ import type { VaultEntry } from "../api";
 
 export const isMd = (p: string) => p.toLowerCase().endsWith(".md");
 
+/** Расширения картинок, которые показывает база (зеркало links::IMAGE_EXTS). */
+export const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg)$/i;
+export const isImage = (p: string) => IMAGE_EXT_RE.test(p) && baseName(p).length > 4;
+
 /** Последний компонент пути. */
 export const baseName = (p: string) => p.slice(p.lastIndexOf("/") + 1);
 
@@ -39,13 +43,15 @@ export function ancestors(p: string): string[] {
   return out;
 }
 
-/** Плоские списки заметок и папок дерева. */
-export function flatten(tree: VaultEntry[]): { notes: string[]; folders: string[] } {
+/** Плоские списки заметок, картинок и папок дерева. */
+export function flatten(tree: VaultEntry[]): { notes: string[]; folders: string[]; images: string[] } {
   const notes: string[] = [];
   const folders: string[] = [];
+  const images: string[] = [];
   const walk = (list: VaultEntry[]) => {
     for (const e of list) {
       if (e.kind === "note") notes.push(e.path);
+      else if (e.kind === "image") images.push(e.path);
       else {
         folders.push(e.path);
         walk(e.children ?? []);
@@ -53,7 +59,7 @@ export function flatten(tree: VaultEntry[]): { notes: string[]; folders: string[
     }
   };
   walk(tree);
-  return { notes, folders };
+  return { notes, folders, images };
 }
 
 /** Разобранная вики-ссылка `[[цель#заголовок|псевдоним]]`. */
@@ -81,9 +87,23 @@ const key = (p: string) => (isMd(p) ? p.slice(0, -3) : p).toLowerCase();
  * затем короче путь, затем по алфавиту.
  */
 export function resolveLink(notes: string[], target: string, source: string): string | null {
-  const t = key(target.trim().replace(/^\/+/, ""));
-  if (!t) return null;
+  const raw = target.trim();
   const srcDir = parentDir(source).toLowerCase();
+  if (raw.startsWith("./") || raw.startsWith("../")) {
+    // `./x`, `../x` — только относительно папки источника.
+    const parts = srcDir ? srcDir.split("/") : [];
+    for (const p of raw.split("/")) {
+      if (p === "" || p === ".") continue;
+      if (p === "..") {
+        if (!parts.length) return null;
+        parts.pop();
+      } else parts.push(p);
+    }
+    const joined = key(parts.join("/"));
+    return notes.find((n) => key(n) === joined) ?? null;
+  }
+  const t = key(raw.replace(/^\/+/, ""));
+  if (!t) return null;
   if (srcDir) {
     const rel = `${srcDir}/${t}`;
     const hit = notes.find((n) => key(n) === rel);
@@ -116,6 +136,16 @@ function better(a: string, b: string, srcDir: string): boolean {
 export function linkText(notes: string[], path: string, source: string): string {
   const name = noteName(path);
   if (resolveLink(notes, name, source) === path) return name;
+  return isMd(path) ? path.slice(0, -3) : path;
+}
+
+/**
+ * Текст ссылки на файл (заметку или картинку) `path`: имя, если оно однозначно
+ * разрешается в него, иначе путь; у картинки расширение остаётся.
+ */
+export function fileLinkText(files: string[], path: string, source: string): string {
+  const name = isMd(path) ? noteName(path) : baseName(path);
+  if (resolveLink(files, name, source) === path) return name;
   return isMd(path) ? path.slice(0, -3) : path;
 }
 

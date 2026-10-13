@@ -7,11 +7,12 @@ import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react
 import { listen } from "@tauri-apps/api/event";
 import { FileSearch, Files, PanelLeft, PanelRight, Search } from "lucide-react";
 
-import { VAULT_EVENT, type VaultEvent } from "../api";
+import { LINKS_EVENT, VAULT_EVENT, type RelinkReport, type VaultEvent } from "../api";
 import { useGraph } from "../store/graph";
 import { useMode } from "../store/mode";
 import { Explorer } from "./Explorer";
 import { NoteArea, TabBar } from "./NoteArea";
+import { showNotice } from "./notice";
 import { QuickSwitcher } from "./QuickSwitcher";
 import { RightPanel } from "./RightPanel";
 import { inResults, useResults } from "./results";
@@ -50,6 +51,27 @@ export default function KbMode({ active }: { active: boolean }) {
         else off = fn;
       },
     );
+    return () => {
+      cancelled = true;
+      off?.();
+    };
+  }, []);
+
+  // Ссылки переписаны при переименовании (M6c): открытые вкладки этих заметок
+  // перечитываются (чистые — минимальной правкой, «грязные» — через баннер конфликта),
+  // пользователю — короткое уведомление со счётом.
+  useEffect(() => {
+    let off: (() => void) | undefined;
+    let cancelled = false;
+    void listen<RelinkReport>(LINKS_EVENT, (e) => {
+      const { links, files } = e.payload;
+      const kb = useKb.getState();
+      for (const t of kb.tabs) if (files.includes(t.path)) void docs.get(t.id)?.external();
+      showNotice(`Обновлено ссылок: ${links} (заметок: ${files.length})`);
+    }).then((fn) => {
+      if (cancelled) fn();
+      else off = fn;
+    });
     return () => {
       cancelled = true;
       off?.();
