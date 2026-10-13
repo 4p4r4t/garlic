@@ -2,7 +2,7 @@ use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use super::{canvases, ensure_finite, new_id, now_ms, parse_col};
 use crate::error::{AppError, AppResult};
-use crate::model::{NewNode, Node, NodeKind, NodePatch, NodePosition, TaskStatus};
+use crate::model::{NewNode, Node, NodeKind, NodePatch, NodePlace, NodePosition, TaskStatus};
 
 /// Ключи палитры нод (ТЗ §8). Фронт сопоставляет их с конкретными цветами.
 pub const PALETTE: &[&str] = &[
@@ -220,17 +220,52 @@ pub fn move_many(conn: &Connection, positions: &[NodePosition]) -> AppResult<()>
 /// Нужно фронту для подтверждения удаления задачи с подзадачами.
 pub fn count_descendants(conn: &Connection, id: &str) -> AppResult<i64> {
     Ok(conn.query_row(
-        "WITH RECURSIVE sub(canvas_id) AS (
-             SELECT id FROM canvases WHERE owner_node = ?1
-             UNION ALL
-             SELECT c.id FROM canvases c
-             JOIN nodes n ON c.owner_node = n.id
-             JOIN sub ON n.canvas_id = sub.canvas_id
-         )
-         SELECT COUNT(*) FROM nodes WHERE canvas_id IN (SELECT canvas_id FROM sub)",
+        &format!("{SUB_CANVASES} SELECT COUNT(*) FROM nodes WHERE canvas_id IN (SELECT canvas_id FROM sub)"),
         [id],
         |r| r.get(0),
     )?)
+}
+
+/// Все холсты под задачей `?1` на всех уровнях: её слой, слои его задач, …
+/// и ничейные слои, приютившиеся на этих холстах (удаление задачи уносит их тоже).
+const SUB_CANVASES: &str = "WITH RECURSIVE sub(canvas_id) AS (
+     SELECT id FROM canvases WHERE owner_node = ?1
+     UNION
+     SELECT c.id FROM canvases c
+     JOIN nodes n ON c.owner_node = n.id
+     JOIN sub ON n.canvas_id = sub.canvas_id
+     UNION
+     SELECT c.id FROM canvases c
+     JOIN sub ON c.host_canvas = sub.canvas_id
+ )";
+
+/// Все вложенные ноды задач `ids` (все уровни) с положением — для перемещения
+/// задачи вместе с подзадачами (ТЗ §4.12.2). Сами `ids` не входят; повторы убраны.
+pub fn descendants(conn: &Connection, ids: &[String]) -> AppResult<Vec<NodePlace>> {
+    let mut stmt = conn.prepare(&format!(
+        "{SUB_CANVASES} SELECT id, canvas_id, x, y FROM nodes
+          WHERE canvas_id IN (SELECT canvas_id FROM sub) ORDER BY created_at, id"
+    ))?;
+    let roots: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for id in ids {
+        let rows = stmt.query_map([id], |r| {
+            Ok(NodePlace {
+                id: r.get(0)?,
+                canvas_id: r.get(1)?,
+                x: r.get(2)?,
+                y: r.get(3)?,
+            })
+        })?;
+        for p in rows {
+            let p = p?;
+            if !roots.contains(p.id.as_str()) && seen.insert(p.id.clone()) {
+                out.push(p);
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Удаляет ноды. Связи, вложенные холсты и их содержимое уходят каскадом.

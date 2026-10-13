@@ -107,9 +107,20 @@ pub struct Space {
 pub struct Canvas {
     pub id: String,
     pub space_id: String,
-    /// `None` для корневого холста пространства.
+    /// `None` для корневого холста пространства и «ничейного» слоя.
     pub owner_node: Option<String>,
+    /// Только у «ничейного» слоя (ТЗ §4.12.3): холст, на котором лежал бывший
+    /// родитель. У корневого и обычных вложенных холстов — `None`.
+    #[serde(default)]
+    pub host_canvas: Option<String>,
     pub viewport: Viewport,
+}
+
+impl Canvas {
+    /// «Ничейный» слой: родителя нет, но это не корневой холст.
+    pub fn is_orphan(&self) -> bool {
+        self.owner_node.is_none() && self.host_canvas.is_some()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -343,6 +354,64 @@ pub struct ResultLink {
 /// Снимок части графа для undo/redo (ТЗ M6a): ноды вместе со всеми вложенными
 /// холстами (поддеревья подзадач) и всеми связями, касающимися этих нод, плюс
 /// явно указанные связи. `restore_graph` возвращает всё с теми же id.
+/// Холст того же уровня, что и текущий слой (`load_level_neighbors`, ТЗ §4.12.4).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NeighborLevel {
+    pub canvas: Canvas,
+    /// Заголовок задачи-владельца (подпись соседей); у ничейного слоя — `None`.
+    pub parent_title: Option<String>,
+    /// Цепочка холстов от корневого до этого (стек слоёв для перехода).
+    pub canvas_chain: Vec<String>,
+    pub nodes: Vec<Node>,
+    pub edges: Vec<Edge>,
+    pub progress: Vec<NodeProgress>,
+}
+
+/// Вложенная нода с положением (`list_descendants`, групповое перемещение ТЗ §4.12.2).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodePlace {
+    pub id: String,
+    pub canvas_id: String,
+    pub x: f64,
+    pub y: f64,
+}
+
+/// Судьба подзадач при удалении задачи-родителя (ТЗ §4.12.3). «Удалить
+/// подзадачи» — обычное `delete_nodes`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeleteMode {
+    /// «Перенести на уровень родителя»: подзадачи — на холст удаляемой задачи.
+    Lift,
+    /// «Не трогать»: слой подзадач становится ничейным.
+    Orphan,
+}
+
+/// Состояние набора холстов «как есть» (без поддеревьев — они висят на своих
+/// владельцах): строки холстов, их ноды и связи. Основа undo/redo операций,
+/// которые переносят ноды между холстами (ТЗ §4.12.3).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegionSnapshot {
+    /// Холсты области. Холст из `region`, которого нет в `canvases`, при
+    /// применении снимка удаляется.
+    pub region: Vec<String>,
+    pub canvases: Vec<Canvas>,
+    pub nodes: Vec<Node>,
+    pub edges: Vec<Edge>,
+}
+
+/// Результат перестройки: область до и после (undo — `apply_region(before)`,
+/// redo — `apply_region(after)`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegionChange {
+    pub before: RegionSnapshot,
+    pub after: RegionSnapshot,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphSnapshot {

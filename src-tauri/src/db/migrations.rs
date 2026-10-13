@@ -84,4 +84,13 @@ BEGIN
   UPDATE nodes SET status_rank = NULL WHERE id = NEW.id;
 END;
 "#,
+    // v5 — «ничейные» слои (ТЗ §4.12.3, §6 v1.5): у холста, чью задачу-владельца
+    // удалили с выбором «Не трогать», `owner_node = NULL`, а `host_canvas` —
+    // холст, на котором лежал бывший родитель (там слой просвечивает в рамке
+    // «без родителя»). Корневой холст: оба поля NULL. Удаление холста-хозяина
+    // уносит его ничейные слои каскадом.
+    r#"
+ALTER TABLE canvases ADD COLUMN host_canvas TEXT REFERENCES canvases(id) ON DELETE CASCADE;
+CREATE INDEX idx_canvases_host ON canvases(host_canvas) WHERE host_canvas IS NOT NULL;
+"#,
 ];

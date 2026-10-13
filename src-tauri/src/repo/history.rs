@@ -38,12 +38,26 @@ pub fn snapshot(
         "SELECT {} FROM canvases WHERE owner_node = ?1",
         canvases::COLS
     ))?;
+    // Ничейные слои (ТЗ §4.12.3), приютившиеся на холстах снимка, уходят
+    // вместе с хозяином каскадом — значит, и в снимок.
+    let mut hosted = conn.prepare(&format!(
+        "SELECT {} FROM canvases WHERE host_canvas = ?1 ORDER BY id",
+        canvases::COLS
+    ))?;
     while !frontier.is_empty() {
         let mut next = Vec::new();
         for owner in &frontier {
-            let found: Vec<_> = owned
+            let mut found: Vec<_> = owned
                 .query_map([owner], canvases::from_row)?
                 .collect::<Result<_, _>>()?;
+            let mut i = 0;
+            while i < found.len() {
+                let more: Vec<_> = hosted
+                    .query_map([&found[i].id], canvases::from_row)?
+                    .collect::<Result<_, _>>()?;
+                found.extend(more);
+                i += 1;
+            }
             for c in found {
                 if !canvas_set.insert(c.id.clone()) {
                     continue;
@@ -122,9 +136,13 @@ pub fn restore(conn: &Connection, snap: &GraphSnapshot) -> AppResult<usize> {
         }
     }
     for c in &snap.canvases {
-        let owner_ok = match &c.owner_node {
-            Some(o) => snap_nodes.contains(o.as_str()) || nodes::find(&tx, o)?.is_some(),
-            None => false,
+        let owner_ok = match (&c.owner_node, &c.host_canvas) {
+            (Some(o), _) => snap_nodes.contains(o.as_str()) || nodes::find(&tx, o)?.is_some(),
+            // ничейный слой: нужен его холст-хозяин
+            (None, Some(h)) => {
+                snap_canvases.contains(h.as_str()) || canvases::find(&tx, h)?.is_some()
+            }
+            (None, None) => false,
         };
         if !owner_ok {
             return Err(AppError::Invalid(format!(
@@ -133,15 +151,16 @@ pub fn restore(conn: &Connection, snap: &GraphSnapshot) -> AppResult<usize> {
             )));
         }
         tx.execute(
-            "INSERT INTO canvases (id, space_id, owner_node, viewport_x, viewport_y, zoom)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            "INSERT INTO canvases (id, space_id, owner_node, viewport_x, viewport_y, zoom, host_canvas)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 c.id,
                 c.space_id,
                 c.owner_node,
                 c.viewport.x,
                 c.viewport.y,
-                c.viewport.zoom
+                c.viewport.zoom,
+                c.host_canvas
             ],
         )?;
     }
