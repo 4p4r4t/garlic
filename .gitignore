@@ -2,6 +2,9 @@
 node_modules/
 dist/
 
+# Release script output (scripts/release.mjs)
+release/
+
 # Tauri
 src-tauri/target/
 src-tauri/gen/
