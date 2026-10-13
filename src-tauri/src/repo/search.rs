@@ -10,20 +10,24 @@ use crate::error::AppResult;
 use crate::model::{GraphNodeHit, NodeKind, TaskStatus};
 
 type RawNode = (String, NodeKind, String, Option<TaskStatus>, String);
+type CanvasRow = (Option<String>, String, String, Option<String>);
 
 /// Все ноды-задачи и ноды-заметки всех пространств. Порядок: пространство,
 /// положение на холсте. Путь (`parents`) — заголовки задач-владельцев
 /// от корня пространства; `canvas_chain` — аргумент `revealNode`.
 pub fn list_graph_nodes(conn: &Connection) -> AppResult<Vec<GraphNodeHit>> {
-    // canvas id -> (owner node, space id, space name)
-    let mut canvases: HashMap<String, (Option<String>, String, String)> = HashMap::new();
+    // canvas id -> (owner node, space id, space name, хозяин ничейного слоя)
+    let mut canvases: HashMap<String, CanvasRow> = HashMap::new();
     {
         let mut stmt = conn.prepare(
-            "SELECT c.id, c.owner_node, c.space_id, s.name
+            "SELECT c.id, c.owner_node, c.space_id, s.name, c.host_canvas
                FROM canvases c JOIN spaces s ON s.id = c.space_id",
         )?;
         let rows = stmt.query_map([], |r| {
-            Ok((r.get::<_, String>(0)?, (r.get(1)?, r.get(2)?, r.get(3)?)))
+            Ok((
+                r.get::<_, String>(0)?,
+                (r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?),
+            ))
         })?;
         for row in rows {
             let (id, v) = row?;
@@ -62,7 +66,7 @@ pub fn list_graph_nodes(conn: &Connection) -> AppResult<Vec<GraphNodeHit>> {
     let mut memo: HashMap<String, (Vec<String>, Vec<String>)> = HashMap::new();
     let mut out = Vec::with_capacity(all.len());
     for (id, kind, title, status, canvas_id) in all {
-        let Some((_, space_id, space_name)) = canvases.get(&canvas_id) else {
+        let Some((_, space_id, space_name, _)) = canvases.get(&canvas_id) else {
             continue;
         };
         let (chain, parents) = memo
@@ -73,15 +77,26 @@ pub fn list_graph_nodes(conn: &Connection) -> AppResult<Vec<GraphNodeHit>> {
                 let mut cur = canvas_id.clone();
                 // защита от циклов: глубина ограничена
                 for _ in 0..64 {
-                    let Some(owner) = canvases.get(&cur).and_then(|c| c.0.clone()) else {
+                    let Some(c) = canvases.get(&cur) else {
                         break;
                     };
-                    let Some((t, parent_canvas)) = owners.get(&owner) else {
-                        break;
+                    let parent_canvas = match (&c.0, &c.3) {
+                        (Some(owner), _) => {
+                            let Some((t, parent_canvas)) = owners.get(owner) else {
+                                break;
+                            };
+                            parents.push(t.clone());
+                            parent_canvas.clone()
+                        }
+                        // Ничейный слой (ТЗ §4.12.3): путь идёт через хозяина.
+                        (None, Some(host)) => {
+                            parents.push(super::canvases::ORPHAN_LABEL.to_owned());
+                            host.clone()
+                        }
+                        (None, None) => break,
                     };
-                    parents.push(t.clone());
                     chain.push(parent_canvas.clone());
-                    cur = parent_canvas.clone();
+                    cur = parent_canvas;
                 }
                 chain.reverse();
                 parents.reverse();

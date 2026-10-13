@@ -22,9 +22,50 @@ export interface Space {
 export interface Canvas {
   id: string;
   spaceId: string;
-  /** null у корневого холста пространства */
+  /** null у корневого холста пространства и у «ничейного» слоя */
   ownerNode: string | null;
+  /**
+   * Только у «ничейного» слоя (ТЗ §4.12.3): холст, на котором лежал бывший
+   * родитель (там слой просвечивает в рамке «без родителя»).
+   */
+  hostCanvas: string | null;
   viewport: Viewport;
+}
+
+/** Холст того же уровня, что текущий слой (`load_level_neighbors`, ТЗ §4.12.4). */
+export interface NeighborLevel {
+  canvas: Canvas;
+  /** Заголовок задачи-владельца; null — ничейный слой. */
+  parentTitle: string | null;
+  /** Стек слоёв для перехода к этому холсту. */
+  canvasChain: string[];
+  nodes: NodeModel[];
+  edges: EdgeModel[];
+  progress: NodeProgress[];
+}
+
+/** Вложенная нода с положением (`list_descendants`). */
+export interface NodePlace {
+  id: string;
+  canvasId: string;
+  x: number;
+  y: number;
+}
+
+/** Судьба подзадач удаляемой задачи (ТЗ §4.12.3); «Удалить подзадачи» — обычное удаление. */
+export type DeleteMode = "lift" | "orphan";
+
+/** Холсты области «как есть» (без поддеревьев) — undo/redo перестройки дерева. */
+export interface RegionSnapshot {
+  region: string[];
+  canvases: Canvas[];
+  nodes: NodeModel[];
+  edges: EdgeModel[];
+}
+
+export interface RegionChange {
+  before: RegionSnapshot;
+  after: RegionSnapshot;
 }
 
 export interface NodeModel {

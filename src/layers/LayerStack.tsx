@@ -21,23 +21,57 @@ export const LAYER_ANIM_MS = 200;
 
 interface StackState {
   layers: string[];
+  /** Ключи React уровней `layers` (экземпляр уровня живёт, пока жив ключ). */
+  keys: string[];
   /** Уровни, которые только что закрыли: доигрывают обратную анимацию. */
   leaving: string[];
+  leavingKeys: string[];
+}
+
+let keySeq = 0;
+const newKey = () => `lv${++keySeq}`;
+
+/**
+ * Ключи уровней нового стека: уровень, оставшийся на своём месте, сохраняет
+ * ключ. При бесшовном переходе к соседу по уровню (ТЗ §4.12.4) ключ остаётся
+ * и у уровня, где сменился холст: экземпляр React Flow тот же, тинт не
+ * пересоздаётся, камера не трогается — меняются только ноды.
+ */
+function nextKeys(old: StackState, layers: string[], seamless: boolean): string[] {
+  return layers.map((id, i) =>
+    old.layers[i] === id || (seamless && old.keys[i]) ? old.keys[i] : newKey(),
+  );
 }
 
 export function LayerStack() {
   const layers = useGraph((s) => s.layers);
+  const nav = useGraph((s) => s.nav);
+  const highlight = useGraph((s) => s.highlight);
   const exitTo = useGraph((s) => s.exitTo);
 
   // Производное состояние считается прямо в рендере, чтобы закрываемый
   // уровень не размонтировался ни на кадр до начала обратной анимации.
-  const [stack, setStack] = useState<StackState>({ layers, leaving: [] });
+  const [stack, setStack] = useState<StackState>(() => ({
+    layers,
+    keys: layers.map(newKey),
+    leaving: [],
+    leavingKeys: [],
+  }));
   let current = stack;
   if (stack.layers !== layers) {
     const old = stack.layers;
-    // Смена пространства (другой корень) — без анимации: старые холсты уже не в кэше.
-    const gone = old[0] === layers[0] ? old.filter((id) => !layers.includes(id)) : [];
-    current = { layers, leaving: gone };
+    const keys = nextKeys(stack, layers, nav.seamless);
+    // Смена пространства (другой корень) и бесшовный переход — без анимации.
+    const gone =
+      old[0] === layers[0] && !nav.seamless
+        ? old.map((id, i) => [id, stack.keys[i]] as const).filter(([, k]) => !keys.includes(k))
+        : [];
+    current = {
+      layers,
+      keys,
+      leaving: gone.map(([id]) => id),
+      leavingKeys: gone.map(([, k]) => k),
+    };
     setStack(current);
   }
   const { leaving } = current;
@@ -45,13 +79,18 @@ export function LayerStack() {
   useEffect(() => {
     if (!leaving.length) return;
     const t = setTimeout(
-      () => setStack((s) => (s.leaving === leaving ? { ...s, leaving: [] } : s)),
+      () =>
+        setStack((s) => (s.leaving === leaving ? { ...s, leaving: [], leavingKeys: [] } : s)),
       LAYER_ANIM_MS + 40,
     );
     return () => clearTimeout(t);
   }, [leaving]);
 
-  const rendered = [...layers, ...leaving.filter((id) => !layers.includes(id))];
+  const stillLeaving = leaving
+    .map((id, i) => [id, current.leavingKeys[i]] as const)
+    .filter(([id]) => !layers.includes(id));
+  const rendered = [...layers, ...stillLeaving.map(([id]) => id)];
+  const keys = [...current.keys, ...stillLeaving.map(([, k]) => k)];
   const owners = useGraph(
     useShallow((s) => rendered.map((id) => s.canvases[id]?.canvas.ownerNode ?? null)),
   );
@@ -63,7 +102,8 @@ export function LayerStack() {
       if (e.key !== "Escape" || e.defaultPrevented || !isGraphMode()) return;
       const t = e.target as HTMLElement | null;
       if (t?.closest("input, textarea, [contenteditable='true']")) return;
-      if (document.querySelector(".ctx-menu, .node-menu, .spaces-panel, .is-connecting")) return;
+      if (document.querySelector(".ctx-menu, .node-menu, .spaces-panel, .is-connecting, .gm-backdrop"))
+        return;
       void exitTo(layers.length - 2);
     };
     window.addEventListener("keydown", onKey);
@@ -72,10 +112,10 @@ export function LayerStack() {
 
   const top = layers.length - 1;
   return (
-    <div className="layer-stack">
+    <div className={highlight ? "layer-stack is-highlight" : "layer-stack"}>
       {rendered.map((id, i) => (
         <Level
-          key={id}
+          key={keys[i]}
           canvasId={id}
           index={i}
           active={i === top}

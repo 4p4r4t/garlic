@@ -173,41 +173,12 @@ pub fn result_links(conn: &Connection) -> AppResult<Vec<ResultLink>> {
 
 /// Заголовки задач-владельцев холстов от корня пространства до `canvas_id`
 /// (у корневого холста — пусто): путь задачи `Задача A › Подзадача B`.
+/// Ничейный слой (ТЗ §4.12.3) даёт в пути «Без родителя».
 pub fn owner_titles(conn: &Connection, canvas_id: &str) -> AppResult<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "WITH RECURSIVE up(owner, depth) AS (
-             SELECT owner_node, 0 FROM canvases WHERE id = ?1
-             UNION ALL
-             SELECT c.owner_node, up.depth + 1
-               FROM up
-               JOIN nodes n ON n.id = up.owner
-               JOIN canvases c ON c.id = n.canvas_id
-              WHERE up.depth < 64
-         )
-         SELECT n.title FROM up JOIN nodes n ON n.id = up.owner ORDER BY up.depth DESC",
-    )?;
-    let titles = stmt
-        .query_map(params![canvas_id], |r| r.get::<_, String>(0))?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(titles)
+    Ok(super::canvases::lineage(conn, canvas_id)?.titles)
 }
 
 /// Цепочка холстов от корневого холста пространства до `canvas_id` включительно.
 pub fn canvas_chain(conn: &Connection, canvas_id: &str) -> AppResult<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "WITH RECURSIVE up(id, owner, depth) AS (
-             SELECT id, owner_node, 0 FROM canvases WHERE id = ?1
-             UNION ALL
-             SELECT c.id, c.owner_node, up.depth + 1
-               FROM up
-               JOIN nodes n ON n.id = up.owner
-               JOIN canvases c ON c.id = n.canvas_id
-              WHERE up.depth < 64
-         )
-         SELECT id FROM up ORDER BY depth DESC",
-    )?;
-    let chain = stmt
-        .query_map(params![canvas_id], |r| r.get::<_, String>(0))?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(chain)
+    Ok(super::canvases::lineage(conn, canvas_id)?.chain)
 }

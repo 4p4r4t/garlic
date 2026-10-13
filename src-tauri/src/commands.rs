@@ -170,6 +170,53 @@ pub async fn restore_graph(db: Cmd<'_>, snapshot: GraphSnapshot) -> AppResult<us
     repo::history::restore(&*db.conn()?, &snapshot)
 }
 
+// ---- дерево задач (ТЗ §4.12, M7a) ----
+
+/// Холсты того же уровня, что `canvas_id` (соседи по уровню, ТЗ §4.12.4).
+#[tauri::command]
+pub async fn load_level_neighbors(
+    db: Cmd<'_>,
+    canvas_id: String,
+) -> AppResult<Vec<crate::model::NeighborLevel>> {
+    repo::canvases::level_neighbors(&*db.conn()?, &canvas_id)
+}
+
+/// Все вложенные ноды задач с положением (перемещение с подзадачами, ТЗ §4.12.2).
+#[tauri::command]
+pub async fn list_descendants(
+    db: Cmd<'_>,
+    ids: Vec<String>,
+) -> AppResult<Vec<crate::model::NodePlace>> {
+    repo::nodes::descendants(&*db.conn()?, &ids)
+}
+
+/// Удаление задач с выбором судьбы подзадач (ТЗ §4.12.3).
+#[tauri::command]
+pub async fn delete_nodes_with(
+    db: Cmd<'_>,
+    ids: Vec<String>,
+    edge_ids: Vec<String>,
+    mode: crate::model::DeleteMode,
+) -> AppResult<crate::model::RegionChange> {
+    repo::restructure::delete_with_mode(&*db.conn()?, &ids, &edge_ids, mode)
+}
+
+/// «Перенести в задачу…» (ТЗ §4.12.3).
+#[tauri::command]
+pub async fn move_into_task(
+    db: Cmd<'_>,
+    ids: Vec<String>,
+    target: String,
+) -> AppResult<crate::model::RegionChange> {
+    repo::restructure::move_into_task(&*db.conn()?, &ids, &target)
+}
+
+/// Undo/redo перестройки: привести холсты области к снимку.
+#[tauri::command]
+pub async fn apply_region(db: Cmd<'_>, snapshot: crate::model::RegionSnapshot) -> AppResult<()> {
+    repo::restructure::apply_region(&*db.conn()?, &snapshot)
+}
+
 // ---- состояние приложения ----
 
 #[tauri::command]

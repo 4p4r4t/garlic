@@ -3,6 +3,7 @@ import {
   BookOpen,
   ChevronDown,
   ChevronRight,
+  Highlighter,
   Layers,
   Layers3,
   Network,
@@ -173,6 +174,8 @@ function Crumbs() {
     useShallow((s) =>
       s.layers.slice(1).map((cid, i) => {
         const owner = s.canvases[cid]?.canvas.ownerNode;
+        // Ничейный слой (ТЗ §4.12.3).
+        if (!owner && s.canvases[cid]?.canvas.hostCanvas) return "Без родителя";
         const node = s.canvases[s.layers[i]]?.nodes.find((n) => n.id === owner);
         return node?.data.model.title || "Без названия";
       }),
@@ -203,22 +206,51 @@ function Crumbs() {
   );
 }
 
-/** Переключатель просвечивания вложенных уровней (ТЗ §4.5.1). */
+/**
+ * Переключатель просвечивания вложенных уровней (ТЗ §4.5.1) и рядом — режим
+ * подсветки (ТЗ §4.12.1). Пока подсветка включена, просвечивание неактивно:
+ * все уровни и так видны полностью.
+ */
 function NestedToggle() {
   const show = useGraph((s) => s.showNested);
   const setShowNested = useGraph((s) => s.setShowNested);
+  const highlight = useGraph((s) => s.highlight);
+  const setHighlight = useGraph((s) => s.setHighlight);
   const ready = useGraph((s) => s.phase === "ready");
+  const on = show && !highlight;
   return (
-    <button
-      type="button"
-      className={show ? "tb-icon is-on" : "tb-icon"}
-      aria-pressed={show}
-      disabled={!ready}
-      title={show ? "Скрыть вложенные уровни" : "Показывать вложенные уровни"}
-      onClick={() => void setShowNested(!show)}
-    >
-      <Layers3 size={15} />
-    </button>
+    <>
+      <button
+        type="button"
+        className={on ? "tb-icon is-on" : "tb-icon"}
+        aria-pressed={on}
+        disabled={!ready || highlight}
+        title={
+          highlight
+            ? "Вложенные уровни видны полностью — включена подсветка"
+            : show
+              ? "Скрыть вложенные уровни"
+              : "Показывать вложенные уровни"
+        }
+        onClick={() => void setShowNested(!show)}
+      >
+        <Layers3 size={15} />
+      </button>
+      <button
+        type="button"
+        className={highlight ? "tb-icon tb-highlight is-on" : "tb-icon tb-highlight"}
+        aria-pressed={highlight}
+        disabled={!ready}
+        title={
+          highlight
+            ? "Выключить подсветку (вернуть слои с затемнением)"
+            : "Подсветка: всё дерево видно полностью, клик по задаче обводит её с подзадачами"
+        }
+        onClick={() => void setHighlight(!highlight)}
+      >
+        <Highlighter size={15} />
+      </button>
+    </>
   );
 }
 

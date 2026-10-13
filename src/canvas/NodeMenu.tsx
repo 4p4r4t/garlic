@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { Ban, Layers, Palette, Trash2 } from "lucide-react";
+import { Ban, FolderInput, Layers, ListTree, Palette, Trash2 } from "lucide-react";
 
 import type { NodeModel } from "../api";
 import { PALETTE } from "./palette";
@@ -10,6 +10,10 @@ interface Props {
   anchor: DOMRect;
   onColor: (color: string | null) => void;
   onSubtasks: () => void;
+  /** «Выделить с подзадачами» (ТЗ §4.12.2), только у задачи. */
+  onSelectNested: () => void;
+  /** «Перенести в задачу…» (ТЗ §4.12.3): эту ноду или все выделенные. */
+  onMoveTo: () => void;
   onDelete: () => void;
   onClose: () => void;
 }
@@ -21,7 +25,16 @@ const EDGE = 4;
  * Контекстное меню ноды (ТЗ §4.4): компактная горизонтальная полоса иконок над нодой.
  * Закрывается по Esc / клику мимо / колесу (пан и драг закрывают его из Canvas).
  */
-export function NodeMenu({ model, anchor, onColor, onSubtasks, onDelete, onClose }: Props) {
+export function NodeMenu({
+  model,
+  anchor,
+  onColor,
+  onSubtasks,
+  onSelectNested,
+  onMoveTo,
+  onDelete,
+  onClose,
+}: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [style, setStyle] = useState<CSSProperties>({ visibility: "hidden", left: 0, top: 0 });
@@ -118,6 +131,28 @@ export function NodeMenu({ model, anchor, onColor, onSubtasks, onDelete, onClose
             <Layers size={16} strokeWidth={2} />
           </button>
         )}
+        {model.kind === "task" && (
+          <button
+            type="button"
+            role="menuitem"
+            className="nm-btn"
+            title="Выделить с подзадачами (Alt+клик)"
+            aria-label="Выделить с подзадачами"
+            onClick={onSelectNested}
+          >
+            <ListTree size={16} strokeWidth={2} />
+          </button>
+        )}
+        <button
+          type="button"
+          role="menuitem"
+          className="nm-btn"
+          title="Перенести в задачу…"
+          aria-label="Перенести в задачу…"
+          onClick={onMoveTo}
+        >
+          <FolderInput size={16} strokeWidth={2} />
+        </button>
         <button
           type="button"
           role="menuitem"

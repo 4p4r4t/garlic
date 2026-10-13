@@ -25,6 +25,11 @@ pub fn list_space_tasks(conn: &Connection, space_id: &str) -> AppResult<Vec<Spac
              FROM lvl
              JOIN nodes o ON o.canvas_id = lvl.canvas_id AND o.kind = 'task'
              JOIN canvases c ON c.owner_node = o.id
+             UNION ALL
+             -- ничейные слои (ТЗ §4.12.3): родителя нет, уровень — глубже хозяина
+             SELECT c.id, NULL, lvl.depth + 1
+             FROM lvl
+             JOIN canvases c ON c.host_canvas = lvl.canvas_id
          )
          SELECT n.id, n.title, COALESCE(n.status, 'todo'), n.color, n.canvas_id,
                 lvl.owner, lvl.depth, n.x, n.y, n.created_at
@@ -69,6 +74,8 @@ pub fn list_all_tasks(conn: &Connection) -> AppResult<Vec<PanelTask>> {
     for space in spaces::list(conn)? {
         let list = list_space_tasks(conn, &space.id)?;
         let by_id: HashMap<&str, &SpaceTask> = list.iter().map(|t| (t.id.as_str(), t)).collect();
+        // Путь до ничейного слоя (ТЗ §4.12.3) — через его хозяина.
+        let mut orphan_paths: HashMap<String, super::canvases::Lineage> = HashMap::new();
         for t in &list {
             let mut parents = Vec::new();
             let mut chain = vec![t.canvas_id.clone()];
@@ -77,6 +84,16 @@ pub fn list_all_tasks(conn: &Connection) -> AppResult<Vec<PanelTask>> {
                 parents.push(p.title.clone());
                 chain.push(p.canvas_id.clone());
                 cur = p.parent_node_id.as_deref().and_then(|q| by_id.get(q));
+            }
+            let top = chain.last().cloned().unwrap_or_default();
+            if top != space.root_canvas {
+                if !orphan_paths.contains_key(&top) {
+                    let l = super::canvases::lineage(conn, &top)?;
+                    orphan_paths.insert(top.clone(), l);
+                }
+                let l = &orphan_paths[&top];
+                parents.extend(l.titles.iter().rev().cloned());
+                chain.extend(l.chain.iter().rev().skip(1).cloned());
             }
             parents.reverse();
             chain.reverse();

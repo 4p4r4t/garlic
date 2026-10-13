@@ -2258,3 +2258,254 @@ button.kb-link.is-path.is-note:hover {
   outline: none;
   border-color: #7f6df2;
 }
+
+/* ---------- M7a: слои и дерево (ТЗ §4.12) ---------- */
+
+/* Режим подсветки (§4.12.1): без тинта, blur и затемнения — все уровни яркие. */
+.layer-stack.is-highlight .layer-tint {
+  opacity: 0;
+  animation: none;
+}
+.layer-stack.is-highlight .layer-level.is-under {
+  filter: none;
+}
+/* сетка — только у нижнего уровня, иначе точки слоёв ложатся поверх нод под ними */
+.layer-stack.is-highlight .react-flow.is-layer .react-flow__background {
+  display: none;
+}
+.tb-highlight.is-on {
+  color: #f0c86c;
+}
+
+/* Подсветка: задача и её поддерево — контрастный аутлайн цветом акцента. */
+.react-flow__node.is-hl .g-node {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 2px var(--accent),
+    0 0 18px rgba(108, 156, 240, 0.35);
+}
+
+/* Выделено с подзадачами (§4.12.2): просвечивающие вложенные — с аутлайном. */
+.react-flow__node.is-nested-sel {
+  opacity: 0.9;
+}
+.react-flow__node.is-nested-sel .g-node {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* Соседи по уровню (§4.12.4): над тинтом, приглушённые, с подписью родителя. */
+.react-flow__node-neighbor {
+  opacity: 0.7;
+  cursor: pointer;
+  transition: opacity 120ms;
+}
+.react-flow__node-neighbor:hover {
+  opacity: 0.92;
+}
+.react-flow__node-neighbor .g-node {
+  box-shadow: none;
+}
+.react-flow__node-neighbor:hover .g-node {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.react-flow__edge.is-neighbor {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.nb-caption {
+  position: absolute;
+  left: 2px;
+  bottom: calc(100% + 4px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 1px 7px 1px 5px;
+  border-radius: 8px;
+  background: rgba(20, 21, 24, 0.85);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.nb-caption svg {
+  flex: none;
+}
+.nb-caption span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.nb-caption.is-orphan {
+  border-style: dashed;
+  font-style: italic;
+}
+
+/* Ничейный слой (§4.12.3): пунктирная рамка «без родителя» на уровне бывшего
+   родителя (прозрачность — по глубине, как у просвечивающих нод) и
+   пунктирная заглушка вместо якоря в самом слое. */
+.react-flow__node-orphanFrame {
+  cursor: pointer;
+}
+.orphan-frame {
+  position: relative;
+  border: 1.5px dashed rgba(200, 205, 220, 0.55);
+  border-radius: 14px;
+  background: rgba(140, 150, 175, 0.04);
+}
+.react-flow__node-orphanFrame:hover .orphan-frame {
+  border-color: var(--accent);
+}
+.orphan-frame-caption {
+  position: absolute;
+  left: 12px;
+  top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+  letter-spacing: 0.02em;
+}
+.layer-stack.is-highlight .react-flow__node-orphanFrame {
+  opacity: 0.8;
+}
+.g-node.orphan-anchor {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 52px;
+  border: 1.5px dashed rgba(200, 205, 220, 0.6);
+  background: rgba(30, 32, 38, 0.75);
+  color: var(--muted);
+  font-style: italic;
+  cursor: pointer;
+  box-shadow: none;
+}
+.g-node.orphan-anchor:hover {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+/* Окна перестройки дерева: выбор судьбы подзадач, «Перенести в задачу…». */
+.gm-backdrop:not(.gs-backdrop) {
+  position: fixed;
+  inset: 0;
+  z-index: 125;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding-top: 16vh;
+  background: rgba(8, 9, 13, 0.55);
+  animation: layer-fade-in 140ms ease-out;
+}
+.gm-dialog {
+  width: min(480px, 92%);
+  padding: 16px 16px 12px;
+  background: var(--menu-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
+}
+.gm-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.gm-text {
+  color: var(--muted);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+.gm-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.gm-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.gm-choice svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.gm-choice:hover,
+.gm-choice:focus-visible {
+  border-color: var(--accent);
+  background: var(--menu-hover);
+  outline: none;
+}
+.gm-choice.is-danger:hover svg,
+.gm-choice.is-danger:focus-visible svg {
+  color: var(--danger);
+}
+.gm-choice-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.gm-choice-label {
+  font-size: 13px;
+}
+.gm-choice-hint {
+  color: var(--faint);
+  font-size: 12px;
+}
+.gm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.gm-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.gm-btn:hover,
+.gm-btn:focus-visible {
+  background: var(--menu-hover);
+  outline: none;
+}
+.gm-btn.is-danger {
+  border-color: rgba(224, 112, 122, 0.5);
+  color: var(--danger);
+}
+.gm-btn.is-danger:hover,
+.gm-btn.is-danger:focus-visible {
+  background: rgba(224, 112, 122, 0.14);
+}
+.mp-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.gs-item.is-disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

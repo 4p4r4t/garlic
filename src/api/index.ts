@@ -9,7 +9,12 @@ import type {
   Backlink,
   Canvas,
   CanvasData,
+  DeleteMode,
   EdgeModel,
+  NeighborLevel,
+  NodePlace,
+  RegionChange,
+  RegionSnapshot,
   GraphSnapshot,
   KbStat,
   LinkRole,
@@ -74,6 +79,10 @@ export const APP_STATE = {
   kbUpdateLinks: "kb.update_links",
   /** Папка вложений (картинки из буфера/перетаскивания), M6c; нет — `Вложения`. */
   kbAttachmentsFolder: "kb.attachments_folder",
+  /** "1"/"0" — режим подсветки вместо тинта (ТЗ §4.12.1). */
+  highlight: "highlight_mode",
+  /** "1"/"0" — всегда двигать задачу вместе с подзадачами (ТЗ §4.12.2). */
+  moveWithSubtasks: "move_with_subtasks",
 } as const;
 
 /** Папки по умолчанию, пока не заданы в настройках (зеркало kblink.rs). */
@@ -122,6 +131,21 @@ export const api = {
     invoke<GraphSnapshot>("snapshot_graph", { nodeIds, edgeIds }),
   /** Вернуть снимок с теми же id (всё или ничего) → число нод. */
   restoreGraph: (snapshot: GraphSnapshot) => invoke<number>("restore_graph", { snapshot }),
+
+  // дерево задач (ТЗ §4.12, M7a)
+  /** Непустые холсты той же глубины, что canvasId (соседи по уровню). */
+  loadLevelNeighbors: (canvasId: string) =>
+    invoke<NeighborLevel[]>("load_level_neighbors", { canvasId }),
+  /** Все вложенные ноды задач (все уровни) с положением. */
+  listDescendants: (ids: string[]) => invoke<NodePlace[]>("list_descendants", { ids }),
+  /** Удаление задач с переносом подзадач на уровень выше / в ничейный слой. */
+  deleteNodesWith: (ids: string[], edgeIds: string[], mode: DeleteMode) =>
+    invoke<RegionChange>("delete_nodes_with", { ids, edgeIds, mode }),
+  /** «Перенести в задачу…»: ноды с поддеревьями — во вложенный холст target. */
+  moveIntoTask: (ids: string[], target: string) =>
+    invoke<RegionChange>("move_into_task", { ids, target }),
+  /** Undo/redo перестройки: холсты области — как в снимке. */
+  applyRegion: (snapshot: RegionSnapshot) => invoke<void>("apply_region", { snapshot }),
 
   // состояние приложения
   getAppState: (key: string) => invoke<string | null>("get_app_state", { key }),
