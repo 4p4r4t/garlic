@@ -143,7 +143,7 @@ export function buildExtensions(ctx: EditorCtx): Extension[] {
     syntaxHighlighting(classHighlighter),
     livePreview({ notes: ctx.notes, images: ctx.images, source: ctx.source }),
     autocompletion({
-      override: [wikiCompletion({ notes: ctx.notes, source: ctx.source })],
+      override: [wikiCompletion({ notes: ctx.notes, images: ctx.images, source: ctx.source })],
       icons: false,
       closeOnBlur: true,
     }),

@@ -49,6 +49,35 @@ export interface DocHooks {
   showError: (e: unknown) => void;
 }
 
+/**
+ * Трёхстороннее слияние по строкам для «грязной» вкладки: `base` — текст, который
+ * мы считали лежащим на диске, `theirs` — новый текст на диске, `mine` — текст в
+ * редакторе. Работает, когда число строк на диске не изменилось (так переписываются
+ * ссылки при переименовании) и каждая изменённая строка есть в редакторе без правок
+ * (в том же количестве) — тогда изменения диска переносятся в редактор, а ввод
+ * пользователя остаётся. Иначе `null` (настоящий конфликт — баннер).
+ */
+export function mergeLines(base: string, theirs: string, mine: string): string | null {
+  const b = base.split("\n");
+  const t = theirs.split("\n");
+  if (b.length !== t.length) return null;
+  const repl = new Map<string, string>();
+  const want = new Map<string, number>();
+  for (let i = 0; i < b.length; i++) {
+    if (b[i] === t[i]) continue;
+    if (b[i] === "") return null;
+    if (repl.has(b[i]) && repl.get(b[i]) !== t[i]) return null;
+    repl.set(b[i], t[i]);
+    want.set(b[i], (want.get(b[i]) ?? 0) + 1);
+  }
+  if (!repl.size) return mine;
+  const m = mine.split("\n");
+  const have = new Map<string, number>();
+  for (const line of m) if (repl.has(line)) have.set(line, (have.get(line) ?? 0) + 1);
+  for (const [line, n] of want) if (have.get(line) !== n) return null;
+  return m.map((l) => repl.get(l) ?? l).join("\n");
+}
+
 /** Куда прокрутить после загрузки. */
 export type Reveal = { line: number } | { heading: string } | null;
 
@@ -206,12 +235,29 @@ export class NoteDoc {
       this.mtime = file.mtime;
       this.applyText(content);
       this.setMeta({ dirty: false, missing: false, version: this.meta.version + 1 });
-    } else {
+    } else if (!this.tryMerge(file)) {
       this.diskText = content;
       this.diskMtime = file.mtime;
       clearTimeout(this.timer);
       this.setMeta({ conflict: true });
     }
+  }
+
+  /**
+   * Диск изменился (например, переписаны ссылки при переименовании), а в редакторе
+   * есть несохранённый ввод: если правки не пересекаются — переносим изменения диска
+   * в редактор, ввод остаётся, автосохранение продолжится. `false` — настоящий конфликт.
+   */
+  private tryMerge(file: { content: string; mtime: number }): boolean {
+    const merged = mergeLines(this.saved, file.content, this.text);
+    if (merged == null) return false;
+    this.saved = file.content;
+    this.mtime = file.mtime;
+    this.applyText(merged);
+    const dirty = merged !== file.content;
+    this.setMeta({ dirty, missing: false, version: this.meta.version + 1 });
+    if (dirty) this.schedule();
+    return true;
   }
 
   /** Запись отклонена (файл изменён снаружи): перечитать диск и показать конфликт. */
@@ -224,6 +270,7 @@ export class NoteDoc {
         this.setMeta({ dirty: false });
         return;
       }
+      if (this.tryMerge(file)) return;
       this.diskText = file.content;
       this.diskMtime = file.mtime;
       clearTimeout(this.timer);
