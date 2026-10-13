@@ -147,9 +147,9 @@ fn graph_search_lists_all_nodes_with_paths() {
 
     let h = get(&a);
     assert!(h.parents.is_empty());
-    assert_eq!(h.canvas_chain, [s1.root_canvas.clone()]);
+    assert_eq!(h.canvas_chain, std::slice::from_ref(&s1.root_canvas));
 
     let h = get(&other);
     assert_eq!(h.space_id, s2.id);
-    assert_eq!(h.canvas_chain, [s2.root_canvas.clone()]);
+    assert_eq!(h.canvas_chain, std::slice::from_ref(&s2.root_canvas));
 }
