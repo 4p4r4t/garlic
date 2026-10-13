@@ -24,6 +24,7 @@ import type {
   ResultLink,
   SearchHit,
   Space,
+  PanelTask,
   SpaceTask,
   GraphNodeHit,
   SubtreeLevel,
@@ -63,6 +64,12 @@ export const APP_STATE = {
   kbCommentFolder: "kb.default_comment_folder",
   /** Папка для новых «Результатов» задач (M5.3); нет — `Результаты`. */
   kbResultFolder: "kb.default_result_folder",
+  /** JSON `string[]` — id скрытых в панели списков пространств (новые отмечены сами). */
+  panelHiddenSpaces: "overview.hidden_spaces",
+  /** JSON `{on, ids}` — закрепление списка «В работе» (ТЗ §4.12.6). */
+  panelPinned: "overview.pinned",
+  /** Ширина боковой панели списков, px. */
+  panelWidth: "overview.width",
 } as const;
 
 /** Папки по умолчанию, пока не заданы в настройках (зеркало kblink.rs). */
@@ -118,6 +125,10 @@ export const api = {
 
   // поиск по графу (M6b)
   listGraphNodes: () => invoke<GraphNodeHit[]>("list_graph_nodes"),
+  // боковая панель списков (ТЗ §4.12.5): очередь выполнения, все пространства
+  listAllTasks: () => invoke<PanelTask[]>("list_all_tasks"),
+  /** Ручной порядок: задачи получают ранги по порядку `ids`. */
+  reorderTasks: (ids: string[]) => invoke<void>("reorder_tasks", { ids }),
 
   // база знаний (ТЗ §4.10). Пути — относительно vault, `/`; папка-корень — "".
   vaultInfo: () => rawInvoke<VaultInfo>("vault_info"),

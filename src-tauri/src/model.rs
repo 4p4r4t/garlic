@@ -285,6 +285,24 @@ pub struct GraphNodeHit {
     pub parents: Vec<String>,
 }
 
+/// Задача для боковой панели списков (`list_all_tasks`, ТЗ §4.12.5): из любого пространства.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PanelTask {
+    pub id: String,
+    pub title: String,
+    pub status: TaskStatus,
+    pub color: Option<String>,
+    pub canvas_id: String,
+    pub parent_node_id: Option<String>,
+    pub space_id: String,
+    pub space_name: String,
+    /// Заголовки предков от корня пространства (без самой задачи).
+    pub parents: Vec<String>,
+    /// Цепочка холстов от корневого холста пространства до холста задачи.
+    pub canvas_chain: Vec<String>,
+}
+
 /// Нода, привязанная к файлу/папке базы знаний (`kb_linked_nodes`, правая панель «Ноды графа»).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

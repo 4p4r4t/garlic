@@ -1363,238 +1363,6 @@ button.crumb:hover {
   opacity: 1;
 }
 
-.ov-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: 40;
-  background: rgba(8, 9, 13, 0.55);
-  animation: layer-fade-in 160ms ease-out;
-}
-
-.ov-panel {
-  position: absolute;
-  top: 28px;
-  left: 50%;
-  z-index: 42;
-  display: flex;
-  flex-direction: column;
-  max-height: calc(100% - 56px);
-  width: min(60%, 860px);
-  min-width: min(420px, calc(100% - 120px));
-  transform: translateX(-50%);
-  background: var(--menu-bg);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55);
-  animation: ov-pop 160ms ease-out;
-}
-
-@keyframes ov-pop {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(6px);
-  }
-}
-
-.ov-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 8px 0 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-.ov-tabs {
-  display: flex;
-  flex: 1;
-  gap: 2px;
-  min-width: 0;
-}
-
-.ov-tab {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 12px 9px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.ov-tab svg {
-  color: var(--ov-st);
-}
-.ov-tab:hover {
-  color: var(--fg);
-}
-.ov-tab.is-active {
-  border-bottom-color: var(--ov-st);
-  color: var(--fg);
-}
-
-.ov-count {
-  min-width: 20px;
-  padding: 0 6px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.07);
-  color: var(--muted);
-  font-size: 12px;
-  text-align: center;
-}
-
-.ov-close {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  margin-bottom: 6px;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-.ov-close:hover {
-  background: var(--menu-hover);
-  color: var(--fg);
-}
-
-.ov-body {
-  flex: 1;
-  min-height: 120px;
-  overflow-y: auto;
-  padding: 8px 8px 12px;
-}
-
-.ov-empty {
-  padding: 28px 12px;
-  color: var(--faint);
-  text-align: center;
-}
-
-.ov-tree,
-.ov-tree ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-/* вложенность: отступ + тонкая направляющая */
-.ov-tree ul {
-  margin-left: 15px;
-  padding-left: 8px;
-  border-left: 1px solid var(--border);
-}
-
-.ov-row {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-height: 30px;
-  border-radius: 6px;
-}
-.ov-row:hover {
-  background: var(--menu-hover);
-}
-.ov-row.is-context {
-  opacity: 0.5;
-}
-.ov-row.is-context:hover {
-  opacity: 0.8;
-}
-
-.ov-chevron {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-}
-.ov-chevron svg {
-  transition: transform 120ms ease-out;
-}
-.ov-chevron.is-open svg {
-  transform: rotate(90deg);
-}
-.ov-chevron:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--fg);
-}
-.ov-chevron.is-leaf {
-  cursor: default;
-}
-.ov-chevron.is-leaf:hover {
-  background: transparent;
-}
-
-.ov-status {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--ov-st);
-  cursor: pointer;
-}
-.ov-status:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.ov-title {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 5px 8px 5px 4px;
-  border: 0;
-  background: transparent;
-  color: var(--fg);
-  text-align: left;
-  cursor: pointer;
-}
-.ov-title-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.ov-title-text.is-empty {
-  color: var(--faint);
-  font-style: italic;
-}
-.ov-st-done .ov-title-text {
-  color: var(--muted);
-  text-decoration: line-through;
-}
-
-.ov-swatch {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.ov-hidden-count {
-  flex: none;
-  padding: 0 6px;
-  border-radius: 9px;
-  background: rgba(255, 255, 255, 0.07);
-  color: var(--muted);
-  font-size: 11px;
-}
-
 /* ---------- настройки: папка базы знаний ---------- */
 
 .st-vault-path {
@@ -2190,4 +1958,288 @@ button.kb-link.is-path.is-note:hover {
   border-top: 1px solid var(--border);
   color: var(--faint);
   font-size: 12px;
+}
+
+/* ---------- боковая панель списков (ТЗ §4.12.5, src/overview) ---------- */
+
+.ov-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+.ov-empty {
+  padding: 28px 12px;
+  color: var(--faint);
+  text-align: center;
+}
+
+.qp-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 42;
+  display: flex;
+  flex-direction: column;
+  background: var(--menu-bg);
+  border-left: 1px solid var(--border);
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.35);
+  animation: sp-slide 160ms ease-out;
+}
+@keyframes sp-slide {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+.qp-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  z-index: 2;
+  width: 7px;
+  cursor: ew-resize;
+}
+.qp-resize:hover {
+  background: rgba(108, 156, 240, 0.35);
+}
+
+.qp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 10px 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.qp-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--fg);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.qp-title svg {
+  color: var(--ov-st);
+}
+.qp-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.qp-iconbtn,
+.qp-spaces-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.qp-iconbtn:hover,
+.qp-spaces-btn:hover {
+  background: var(--menu-hover);
+  color: var(--fg);
+}
+.qp-iconbtn.is-on {
+  border-color: #e2b04a;
+  color: #e2b04a;
+  background: rgba(226, 176, 74, 0.12);
+}
+.qp-iconbtn.is-on svg {
+  transform: rotate(-35deg);
+  fill: currentColor;
+}
+
+.qp-spaces {
+  position: relative;
+}
+.qp-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+}
+.qp-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 4;
+  min-width: 190px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--menu-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+.qp-menu-title {
+  padding: 4px 8px 6px;
+  color: var(--faint);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.qp-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+.qp-menu-item:hover {
+  background: var(--menu-hover);
+}
+.qp-menu-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qp-check {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--faint);
+  border-radius: 4px;
+  color: #fff;
+}
+.qp-check.is-on {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.qp-body {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 10px 10px 16px;
+}
+.qp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.qp-item {
+  position: relative;
+}
+.qp-item.is-dragging {
+  z-index: 5;
+  opacity: 0.92;
+  pointer-events: none;
+}
+.qp-item.is-dragging .qp-block {
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+  cursor: grabbing;
+}
+.qp-drop {
+  position: absolute;
+  top: -5px;
+  right: 0;
+  left: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.qp-drop.is-end {
+  position: static;
+  margin-top: -5px;
+}
+
+.qp-block {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px 9px 14px;
+  border: 1px solid var(--node-border);
+  border-radius: 8px;
+  background: var(--node-bg);
+  color: var(--fg);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  overflow: hidden;
+}
+.qp-block:hover {
+  border-color: var(--faint);
+}
+.qp-stripe {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  background: var(--ov-st);
+}
+.qp-path {
+  overflow: hidden;
+  font-size: 11px;
+  opacity: 0.62;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.qp-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.qp-status {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ov-st);
+  cursor: pointer;
+}
+.qp-block.has-fill .qp-status {
+  color: inherit;
+}
+.qp-status:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+.qp-text {
+  flex: 1;
+  min-width: 0;
+  padding-top: 2px;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.qp-text.is-empty {
+  opacity: 0.6;
+  font-style: italic;
+}
+.qp-block.ov-st-done .qp-text {
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.4);
 }

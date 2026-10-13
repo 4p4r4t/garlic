@@ -177,6 +177,16 @@ pub async fn list_graph_nodes(db: Cmd<'_>) -> AppResult<Vec<crate::model::GraphN
     repo::search::list_graph_nodes(&*db.conn()?)
 }
 
+#[tauri::command]
+pub async fn list_all_tasks(db: Cmd<'_>) -> AppResult<Vec<crate::model::PanelTask>> {
+    repo::tasks::list_all_tasks(&*db.conn()?)
+}
+
+#[tauri::command]
+pub async fn reorder_tasks(db: Cmd<'_>, ids: Vec<String>) -> AppResult<()> {
+    repo::tasks::reorder_tasks(&*db.conn()?, &ids)
+}
+
 // ---- база знаний (ТЗ §4.10) ----
 
 use crate::vault::{self, ops, Backlink, NoteFile, SearchHit, Vault, VaultEntry, VaultInfo};

@@ -1,11 +1,13 @@
 //! Обзор задач пространства (ТЗ §4.6.1): плоский список всех задач всех
 //! уровней; дерево по родителям строит фронт (`src/overview/tree.ts`).
 
-use rusqlite::Connection;
+use std::collections::HashMap;
+
+use rusqlite::{params, Connection};
 
 use super::{parse_col, spaces};
 use crate::error::AppResult;
-use crate::model::SpaceTask;
+use crate::model::{PanelTask, SpaceTask};
 
 /// Все задачи пространства `space_id` (все уровни вложенности).
 ///
@@ -45,4 +47,70 @@ pub fn list_space_tasks(conn: &Connection, space_id: &str) -> AppResult<Vec<Spac
         })
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
+}
+
+/// Все задачи всех пространств для боковой панели (ТЗ §4.12.5), с путём.
+/// Порядок — очередь выполнения: сначала с ручным рангом (`status_rank`), затем
+/// остальные по времени создания (новые задачи — в конец); фронт делит по статусам.
+pub fn list_all_tasks(conn: &Connection) -> AppResult<Vec<PanelTask>> {
+    let mut rank_stmt = conn.prepare(
+        "SELECT id FROM nodes WHERE kind = 'task'
+         ORDER BY status_rank IS NULL, status_rank, created_at, id",
+    )?;
+    let order: HashMap<String, usize> = rank_stmt
+        .query_map([], |r| r.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .enumerate()
+        .map(|(i, id)| (id, i))
+        .collect();
+
+    let mut out = Vec::new();
+    for space in spaces::list(conn)? {
+        let list = list_space_tasks(conn, &space.id)?;
+        let by_id: HashMap<&str, &SpaceTask> = list.iter().map(|t| (t.id.as_str(), t)).collect();
+        for t in &list {
+            let mut parents = Vec::new();
+            let mut chain = vec![t.canvas_id.clone()];
+            let mut cur = t.parent_node_id.as_deref().and_then(|p| by_id.get(p));
+            while let Some(p) = cur {
+                parents.push(p.title.clone());
+                chain.push(p.canvas_id.clone());
+                cur = p.parent_node_id.as_deref().and_then(|q| by_id.get(q));
+            }
+            parents.reverse();
+            chain.reverse();
+            out.push(PanelTask {
+                id: t.id.clone(),
+                title: t.title.clone(),
+                status: t.status,
+                color: t.color.clone(),
+                canvas_id: t.canvas_id.clone(),
+                parent_node_id: t.parent_node_id.clone(),
+                space_id: space.id.clone(),
+                space_name: space.name.clone(),
+                parents,
+                canvas_chain: chain,
+            });
+        }
+    }
+    out.sort_by_key(|t| order.get(&t.id).copied().unwrap_or(usize::MAX));
+    Ok(out)
+}
+
+/// Ручной порядок: задачи из `ids` получают ранги 1, 2, … в этом порядке
+/// (остальные не трогаются). Неизвестный id или заметка — ошибка, пачка откатывается.
+pub fn reorder_tasks(conn: &Connection, ids: &[String]) -> AppResult<()> {
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut stmt =
+            tx.prepare("UPDATE nodes SET status_rank = ?2 WHERE id = ?1 AND kind = 'task'")?;
+        for (i, id) in ids.iter().enumerate() {
+            if stmt.execute(params![id, (i + 1) as f64])? == 0 {
+                return Err(crate::error::AppError::NotFound(format!("задача {id}")));
+            }
+        }
+    }
+    tx.commit()?;
+    Ok(())
 }
