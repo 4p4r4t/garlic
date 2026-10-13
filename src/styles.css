@@ -2254,6 +2254,10 @@ button.kb-link.is-path.is-note:hover {
 .layer-stack.is-highlight .layer-level.is-under {
   filter: none;
 }
+/* сетка — только у нижнего уровня, иначе точки слоёв ложатся поверх нод под ними */
+.layer-stack.is-highlight .react-flow.is-layer .react-flow__background {
+  display: none;
+}
 .tb-highlight.is-on {
   color: #f0c86c;
 }

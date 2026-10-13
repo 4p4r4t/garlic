@@ -285,7 +285,8 @@ function apply(dir: "undo" | "redo"): Promise<void> {
       await step[dir]();
       step.at = 0; // отменённый/повторённый шаг больше не склеивается
       to.push(step);
-      const elsewhere = !step.canvasIds.some((c) => graph().layers.includes(c));
+      const { layers, merged } = graph();
+      const elsewhere = !step.canvasIds.some((c) => layers.includes(c) || merged.includes(c));
       showHint(
         `${dir === "undo" ? "Отменено" : "Повторено"}: ${step.label}${elsewhere ? " (на другом уровне)" : ""}`,
       );

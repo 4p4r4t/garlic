@@ -286,6 +286,8 @@ function MovePickerImpl({ move }: { move: MoveAsk }) {
                 className={`gs-item${i === sel ? " is-selected" : ""}${bad ? " is-disabled" : ""}`}
                 title={bad ? "Нельзя: это переносимая задача или её подзадача" : undefined}
                 onMouseMove={() => setSel(i)}
+                // Фокус остаётся в поле поиска (в т.ч. после клика по недоступной задаче).
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => choose(i)}
               >
                 <span className={`gs-mark status-${r.hit.status ?? "todo"}`}>
