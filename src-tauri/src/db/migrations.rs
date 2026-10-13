@@ -72,4 +72,16 @@ CREATE INDEX idx_nodes_kb_path ON nodes(kb_path);
 ALTER TABLE nodes ADD COLUMN kb_result_path TEXT;
 CREATE INDEX idx_nodes_kb_result_path ON nodes(kb_result_path);
 "#,
+    // v4 — ручной порядок в списках по статусам (ТЗ §4.12.5, §6 v1.5):
+    // `status_rank` — позиция задачи в очереди своего статуса; NULL — «в конец»
+    // (порядок по времени создания). Смена статуса сбрасывает ранг: задача
+    // встаёт в конец очереди нового статуса.
+    r#"
+ALTER TABLE nodes ADD COLUMN status_rank REAL;
+CREATE TRIGGER trg_nodes_status_rank AFTER UPDATE OF status ON nodes
+WHEN OLD.status IS NOT NEW.status
+BEGIN
+  UPDATE nodes SET status_rank = NULL WHERE id = NEW.id;
+END;
+"#,
 ];

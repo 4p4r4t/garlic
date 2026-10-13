@@ -67,6 +67,8 @@ pub fn run() {
             commands::get_app_state,
             commands::set_app_state,
             commands::list_space_tasks,
+            commands::list_all_tasks,
+            commands::reorder_tasks,
             commands::vault_info,
             commands::vault_set_path,
             commands::vault_tree,

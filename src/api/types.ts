@@ -142,6 +142,22 @@ export interface SpaceTask {
   createdAt: number;
 }
 
+/** Задача для боковой панели списков (`list_all_tasks`, ТЗ §4.12.5): любое пространство. */
+export interface PanelTask {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  color: string | null;
+  canvasId: string;
+  parentNodeId: string | null;
+  spaceId: string;
+  spaceName: string;
+  /** Заголовки предков от корня пространства (без самой задачи). */
+  parents: string[];
+  /** Цепочка холстов от корневого холста пространства до холста задачи. */
+  canvasChain: string[];
+}
+
 // ---- база знаний (ТЗ §4.10), src-tauri/src/vault/mod.rs ----
 
 export type VaultEntryKind = "folder" | "note";
