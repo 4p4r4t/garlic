@@ -24,6 +24,7 @@ import type {
   SearchHit,
   Space,
   SpaceTask,
+  GraphNodeHit,
   SubtreeLevel,
   TaskStatus,
   VaultEntry,
@@ -106,6 +107,9 @@ export const api = {
 
   // обзор задач (ТЗ §4.6.1)
   listSpaceTasks: (spaceId: string) => invoke<SpaceTask[]>("list_space_tasks", { spaceId }),
+
+  // поиск по графу (M6b)
+  listGraphNodes: () => invoke<GraphNodeHit[]>("list_graph_nodes"),
 
   // база знаний (ТЗ §4.10). Пути — относительно vault, `/`; папка-корень — "".
   vaultInfo: () => rawInvoke<VaultInfo>("vault_info"),

@@ -14,6 +14,7 @@ import { useShallow } from "zustand/react/shallow";
 import { api } from "../api";
 import { useGraph } from "../store/graph";
 import { useMode } from "../store/mode";
+import { useGraphSearch } from "../search/GraphSearch";
 import { InlineInput } from "./InlineInput";
 import { SettingsPanel } from "./SettingsPanel";
 import { SpacesPanel } from "./SpacesPanel";
@@ -118,7 +119,13 @@ function GraphBar() {
       <Crumbs />
       <div className="tb-spacer" />
       <NestedToggle />
-      <button type="button" className="tb-icon" disabled title="Поиск (скоро)">
+      <button
+        type="button"
+        className="tb-icon"
+        disabled={!ready}
+        title="Поиск по графу (Ctrl+K)"
+        onClick={() => useGraphSearch.getState().setOpen(true)}
+      >
         <Search size={15} />
       </button>
     </>

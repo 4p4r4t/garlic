@@ -153,6 +153,12 @@ pub async fn list_space_tasks(
     repo::tasks::list_space_tasks(&*db.conn()?, &space_id)
 }
 
+/// Все ноды всех пространств и уровней — для поиска по графу (Ctrl+K).
+#[tauri::command]
+pub async fn list_graph_nodes(db: Cmd<'_>) -> AppResult<Vec<crate::model::GraphNodeHit>> {
+    repo::search::list_graph_nodes(&*db.conn()?)
+}
+
 // ---- база знаний (ТЗ §4.10) ----
 
 use crate::vault::{self, ops, Backlink, NoteFile, SearchHit, Vault, VaultEntry, VaultInfo};

@@ -6,6 +6,7 @@ pub mod canvases;
 pub mod edges;
 pub mod kb;
 pub mod nodes;
+pub mod search;
 pub mod spaces;
 pub mod tasks;
 

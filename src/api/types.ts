@@ -142,6 +142,21 @@ export interface SpaceTask {
   createdAt: number;
 }
 
+/** Нода для поиска по графу (`list_graph_nodes`, M6b). */
+export interface GraphNodeHit {
+  id: string;
+  title: string;
+  kind: NodeKind;
+  status: TaskStatus | null;
+  spaceId: string;
+  spaceName: string;
+  canvasId: string;
+  /** Холсты от корневого холста пространства до холста ноды — аргумент `revealNode`. */
+  canvasChain: string[];
+  /** Заголовки задач-владельцев от корня пространства (без самой ноды). */
+  parents: string[];
+}
+
 // ---- база знаний (ТЗ §4.10), src-tauri/src/vault/mod.rs ----
 
 export type VaultEntryKind = "folder" | "note";

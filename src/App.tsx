@@ -2,6 +2,8 @@ import { lazy, Suspense, useEffect } from "react";
 
 import { LayerStack } from "./layers/LayerStack";
 import { TaskOverview } from "./overview/TaskOverview";
+import { HotkeyHelp } from "./canvas/hotkeys";
+import { GraphSearch, GraphSearchHotkey } from "./search/GraphSearch";
 import { useGraph } from "./store/graph";
 import { useKbLinks } from "./store/kbLinks";
 import { useMode } from "./store/mode";
@@ -62,6 +64,9 @@ export default function App() {
           </div>
         )}
       </main>
+      <HotkeyHelp />
+      <GraphSearch />
+      <GraphSearchHotkey />
       {toast && (
         <div className="toast" role="alert" onClick={dismissToast}>
           {toast}

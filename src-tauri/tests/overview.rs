@@ -111,3 +111,45 @@ fn scoped_to_space_and_follows_deletes() {
     nodes::delete_many(&conn, std::slice::from_ref(&a)).unwrap();
     assert!(tasks::list_space_tasks(&conn, &main.id).unwrap().is_empty());
 }
+
+#[test]
+fn graph_search_lists_all_nodes_with_paths() {
+    use garlic_lib::repo::search;
+    let conn = db::open_in_memory().unwrap();
+    let s1 = spaces::ensure_default(&conn).unwrap();
+    let s2 = spaces::create(&conn, "Второе").unwrap();
+    let a = at(&conn, &s1.root_canvas, NodeKind::Task, "A", 0.0, 0.0);
+    let ca = canvases::get_or_create_child(&conn, &a).unwrap();
+    let b = at(&conn, &ca.id, NodeKind::Task, "B", 0.0, 0.0);
+    let cb = canvases::get_or_create_child(&conn, &b).unwrap();
+    let note = at(&conn, &cb.id, NodeKind::Note, "deep note", 0.0, 0.0);
+    set_status(&conn, &b, TaskStatus::Done);
+    let other = at(&conn, &s2.root_canvas, NodeKind::Task, "Other", 0.0, 0.0);
+
+    let list = search::list_graph_nodes(&conn).unwrap();
+    assert_eq!(list.len(), 4);
+    let get = |id: &str| list.iter().find(|h| h.id == id).unwrap();
+
+    let h = get(&note);
+    assert_eq!(h.kind, NodeKind::Note);
+    assert_eq!(h.status, None);
+    assert_eq!(h.space_name, s1.name);
+    assert_eq!(h.parents, ["A", "B"]);
+    assert_eq!(
+        h.canvas_chain,
+        [s1.root_canvas.clone(), ca.id.clone(), cb.id.clone()]
+    );
+
+    let h = get(&b);
+    assert_eq!(h.status, Some(TaskStatus::Done));
+    assert_eq!(h.parents, ["A"]);
+    assert_eq!(h.canvas_chain, [s1.root_canvas.clone(), ca.id.clone()]);
+
+    let h = get(&a);
+    assert!(h.parents.is_empty());
+    assert_eq!(h.canvas_chain, [s1.root_canvas.clone()]);
+
+    let h = get(&other);
+    assert_eq!(h.space_id, s2.id);
+    assert_eq!(h.canvas_chain, [s2.root_canvas.clone()]);
+}
