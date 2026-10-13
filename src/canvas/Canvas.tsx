@@ -37,6 +37,7 @@ import { BulkBar } from "./BulkBar";
 import { CanvasMenu } from "./CanvasMenu";
 import { EDGE_COLOR, isHandleSide, type FlowEdge, type FlowNode } from "./flow";
 import { GhostEdge } from "./GhostEdge";
+import { CanvasHotkeys } from "./hotkeys";
 import { NodeMenu } from "./NodeMenu";
 import { NoteNode } from "./NoteNode";
 import { TaskNode } from "./TaskNode";
@@ -645,6 +646,7 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
           />
         )}
       </ReactFlow>
+      {keys && <CanvasHotkeys canvasId={canvasId} root={rootRef} />}
       {menu && (
         <CanvasMenu x={menu.screen.x} y={menu.screen.y} onPick={onPick} onClose={closeMenu} />
       )}

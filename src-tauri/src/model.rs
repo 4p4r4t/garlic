@@ -267,6 +267,24 @@ pub struct SpaceTask {
     pub created_at: i64,
 }
 
+/// Нода для поиска по графу (`list_graph_nodes`, ТЗ §9 M6b).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphNodeHit {
+    pub id: String,
+    pub title: String,
+    pub kind: NodeKind,
+    /// Только у задач.
+    pub status: Option<TaskStatus>,
+    pub space_id: String,
+    pub space_name: String,
+    pub canvas_id: String,
+    /// Холсты от корневого холста пространства до холста ноды (аргумент `revealNode`).
+    pub canvas_chain: Vec<String>,
+    /// Заголовки задач-владельцев от корня пространства (без самой ноды).
+    pub parents: Vec<String>,
+}
+
 /// Нода, привязанная к файлу/папке базы знаний (`kb_linked_nodes`, правая панель «Ноды графа»).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
