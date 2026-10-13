@@ -1783,7 +1783,7 @@ button.kb-link.is-path.is-note:hover {
   text-align: center;
 }
 
-.sp-panel {
+.qp-panel {
   position: absolute;
   top: 0;
   right: 0;
@@ -1802,7 +1802,7 @@ button.kb-link.is-path.is-note:hover {
     transform: translateX(16px);
   }
 }
-.sp-resize {
+.qp-resize {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -1811,11 +1811,11 @@ button.kb-link.is-path.is-note:hover {
   width: 7px;
   cursor: ew-resize;
 }
-.sp-resize:hover {
+.qp-resize:hover {
   background: rgba(108, 156, 240, 0.35);
 }
 
-.sp-head {
+.qp-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1823,7 +1823,7 @@ button.kb-link.is-path.is-note:hover {
   padding: 10px 10px 8px 14px;
   border-bottom: 1px solid var(--border);
 }
-.sp-title {
+.qp-title {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1832,16 +1832,16 @@ button.kb-link.is-path.is-note:hover {
   font-weight: 600;
   white-space: nowrap;
 }
-.sp-title svg {
+.qp-title svg {
   color: var(--ov-st);
 }
-.sp-head-actions {
+.qp-head-actions {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.sp-iconbtn,
-.sp-spaces-btn {
+.qp-iconbtn,
+.qp-spaces-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1854,30 +1854,30 @@ button.kb-link.is-path.is-note:hover {
   font-size: 12px;
   cursor: pointer;
 }
-.sp-iconbtn:hover,
-.sp-spaces-btn:hover {
+.qp-iconbtn:hover,
+.qp-spaces-btn:hover {
   background: var(--menu-hover);
   color: var(--fg);
 }
-.sp-iconbtn.is-on {
+.qp-iconbtn.is-on {
   border-color: #e2b04a;
   color: #e2b04a;
   background: rgba(226, 176, 74, 0.12);
 }
-.sp-iconbtn.is-on svg {
+.qp-iconbtn.is-on svg {
   transform: rotate(-35deg);
   fill: currentColor;
 }
 
-.sp-spaces {
+.qp-spaces {
   position: relative;
 }
-.sp-menu-backdrop {
+.qp-menu-backdrop {
   position: fixed;
   inset: 0;
   z-index: 3;
 }
-.sp-menu {
+.qp-menu {
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
@@ -1891,14 +1891,14 @@ button.kb-link.is-path.is-note:hover {
   border-radius: 8px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
-.sp-menu-title {
+.qp-menu-title {
   padding: 4px 8px 6px;
   color: var(--faint);
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.sp-menu-item {
+.qp-menu-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1911,16 +1911,16 @@ button.kb-link.is-path.is-note:hover {
   text-align: left;
   cursor: pointer;
 }
-.sp-menu-item:hover {
+.qp-menu-item:hover {
   background: var(--menu-hover);
 }
-.sp-menu-name {
+.qp-menu-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sp-check {
+.qp-check {
   display: grid;
   flex: none;
   place-items: center;
@@ -1930,19 +1930,19 @@ button.kb-link.is-path.is-note:hover {
   border-radius: 4px;
   color: #fff;
 }
-.sp-check.is-on {
+.qp-check.is-on {
   border-color: var(--accent);
   background: var(--accent);
 }
 
-.sp-body {
+.qp-body {
   flex: 1;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   padding: 10px 10px 16px;
 }
-.sp-list {
+.qp-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1950,19 +1950,19 @@ button.kb-link.is-path.is-note:hover {
   padding: 0;
   list-style: none;
 }
-.sp-item {
+.qp-item {
   position: relative;
 }
-.sp-item.is-dragging {
+.qp-item.is-dragging {
   z-index: 5;
   opacity: 0.92;
   pointer-events: none;
 }
-.sp-item.is-dragging .sp-block {
+.qp-item.is-dragging .qp-block {
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
   cursor: grabbing;
 }
-.sp-drop {
+.qp-drop {
   position: absolute;
   top: -5px;
   right: 0;
@@ -1971,12 +1971,12 @@ button.kb-link.is-path.is-note:hover {
   border-radius: 1px;
   background: var(--accent);
 }
-.sp-drop.is-end {
+.qp-drop.is-end {
   position: static;
   margin-top: -5px;
 }
 
-.sp-block {
+.qp-block {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -1991,10 +1991,10 @@ button.kb-link.is-path.is-note:hover {
   touch-action: none;
   overflow: hidden;
 }
-.sp-block:hover {
+.qp-block:hover {
   border-color: var(--faint);
 }
-.sp-stripe {
+.qp-stripe {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -2002,19 +2002,19 @@ button.kb-link.is-path.is-note:hover {
   width: 4px;
   background: var(--ov-st);
 }
-.sp-path {
+.qp-path {
   overflow: hidden;
   font-size: 11px;
   opacity: 0.62;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sp-main {
+.qp-main {
   display: flex;
   align-items: flex-start;
   gap: 8px;
 }
-.sp-status {
+.qp-status {
   display: grid;
   flex: none;
   place-items: center;
@@ -2027,13 +2027,13 @@ button.kb-link.is-path.is-note:hover {
   color: var(--ov-st);
   cursor: pointer;
 }
-.sp-block.has-fill .sp-status {
+.qp-block.has-fill .qp-status {
   color: inherit;
 }
-.sp-status:hover {
+.qp-status:hover {
   background: rgba(255, 255, 255, 0.14);
 }
-.sp-text {
+.qp-text {
   flex: 1;
   min-width: 0;
   padding-top: 2px;
@@ -2041,11 +2041,11 @@ button.kb-link.is-path.is-note:hover {
   font-weight: 500;
   line-height: 1.3;
 }
-.sp-text.is-empty {
+.qp-text.is-empty {
   opacity: 0.6;
   font-style: italic;
 }
-.sp-block.ov-st-done .sp-text {
+.qp-block.ov-st-done .qp-text {
   text-decoration: line-through;
   text-decoration-color: rgba(255, 255, 255, 0.4);
 }

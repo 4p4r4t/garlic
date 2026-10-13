@@ -262,10 +262,10 @@ export function TaskOverview() {
   return (
     <>
       {open && tab && (
-        <aside className="sp-panel" style={{ width }} aria-label="Списки задач">
-          <div className="sp-resize" onPointerDown={startResize} title="Потяните, чтобы изменить ширину" />
-          <div className="sp-head">
-            <span className={`sp-title ov-st-${tab}`}>
+        <aside className="qp-panel" style={{ width }} aria-label="Списки задач">
+          <div className="qp-resize" onPointerDown={startResize} title="Потяните, чтобы изменить ширину" />
+          <div className="qp-head">
+            <span className={`qp-title ov-st-${tab}`}>
               {(() => {
                 const Icon = META[tab].icon;
                 return <Icon size={16} strokeWidth={2.2} />;
@@ -273,10 +273,10 @@ export function TaskOverview() {
               {META[tab].label}
               <span className="ov-count">{tasks ? shown.length : "…"}</span>
             </span>
-            <div className="sp-head-actions">
+            <div className="qp-head-actions">
               {tab === "in_progress" && (
                 <button
-                  className={`sp-iconbtn${pin.on ? " is-on" : ""}`}
+                  className={`qp-iconbtn${pin.on ? " is-on" : ""}`}
                   title={
                     pin.on
                       ? "Список закреплён — снять (готовые уйдут из списка)"
@@ -288,9 +288,9 @@ export function TaskOverview() {
                   <Pin size={15} />
                 </button>
               )}
-              <div className="sp-spaces">
+              <div className="qp-spaces">
                 <button
-                  className="sp-spaces-btn"
+                  className="qp-spaces-btn"
                   title="Пространства"
                   aria-expanded={menuOpen}
                   onClick={() => setMenuOpen((v) => !v)}
@@ -303,23 +303,23 @@ export function TaskOverview() {
                 </button>
                 {menuOpen && (
                   <>
-                    <div className="sp-menu-backdrop" onClick={() => setMenuOpen(false)} />
-                    <div className="sp-menu" role="menu" aria-label="Пространства">
-                      <div className="sp-menu-title">Пространства</div>
+                    <div className="qp-menu-backdrop" onClick={() => setMenuOpen(false)} />
+                    <div className="qp-menu" role="menu" aria-label="Пространства">
+                      <div className="qp-menu-title">Пространства</div>
                       {spaces.map((sp) => {
                         const on = !hidden.has(sp.id);
                         return (
                           <button
                             key={sp.id}
-                            className="sp-menu-item"
+                            className="qp-menu-item"
                             role="menuitemcheckbox"
                             aria-checked={on}
                             onClick={() => toggleSpace(sp.id)}
                           >
-                            <span className={`sp-check${on ? " is-on" : ""}`}>
+                            <span className={`qp-check${on ? " is-on" : ""}`}>
                               {on && <Check size={12} strokeWidth={3} />}
                             </span>
-                            <span className="sp-menu-name">{sp.name}</span>
+                            <span className="qp-menu-name">{sp.name}</span>
                           </button>
                         );
                       })}
@@ -329,7 +329,7 @@ export function TaskOverview() {
               </div>
             </div>
           </div>
-          <div className="sp-body">
+          <div className="qp-body">
             {tasks === null ? (
               <div className="ov-empty">Загрузка…</div>
             ) : shown.length === 0 ? (
@@ -392,7 +392,7 @@ function BlockList({ tasks, statusColors, greenDone, onOpen, onCycle, onReorder 
   const suppressClick = useRef(false);
 
   const onPointerDown = (e: React.PointerEvent, task: PanelTask) => {
-    if (e.button !== 0 || (e.target as HTMLElement).closest(".sp-status")) return;
+    if (e.button !== 0 || (e.target as HTMLElement).closest(".qp-status")) return;
     const startY = e.clientY;
     const ids = tasks.map((t) => t.id);
     // Середины блоков в исходном положении.
@@ -444,20 +444,20 @@ function BlockList({ tasks, statusColors, greenDone, onOpen, onCycle, onReorder 
   const indicatorBefore = drag ? (others[drag.to]?.id ?? null) : null;
 
   return (
-    <ul className="sp-list">
+    <ul className="qp-list">
       {tasks.map((t) => {
         const dragging = drag?.id === t.id;
         return (
           <li
             key={t.id}
-            className={`sp-item${dragging ? " is-dragging" : ""}`}
+            className={`qp-item${dragging ? " is-dragging" : ""}`}
             style={dragging ? { transform: `translateY(${drag!.dy}px)` } : undefined}
             ref={(el) => {
               if (el) refs.current.set(t.id, el);
               else refs.current.delete(t.id);
             }}
           >
-            {drag && !dragging && indicatorBefore === t.id && <div className="sp-drop" />}
+            {drag && !dragging && indicatorBefore === t.id && <div className="qp-drop" />}
             <Block
               task={t}
               statusColors={statusColors}
@@ -471,7 +471,7 @@ function BlockList({ tasks, statusColors, greenDone, onOpen, onCycle, onReorder 
           </li>
         );
       })}
-      {drag && indicatorBefore === null && <li className="sp-drop is-end" />}
+      {drag && indicatorBefore === null && <li className="qp-drop is-end" />}
     </ul>
   );
 }
@@ -495,7 +495,7 @@ function Block({ task, statusColors, greenDone, onPointerDown, onOpen, onCycle }
   const path = [task.spaceName, ...task.parents].join(" › ");
   return (
     <div
-      className={`sp-block ov-st-${task.status}${style ? " has-fill" : ""}`}
+      className={`qp-block ov-st-${task.status}${style ? " has-fill" : ""}`}
       style={style}
       role="button"
       tabIndex={0}
@@ -506,13 +506,13 @@ function Block({ task, statusColors, greenDone, onPointerDown, onOpen, onCycle }
         if (e.key === "Enter") onOpen();
       }}
     >
-      {!style && <span className="sp-stripe" style={{ background: PALETTE[task.color ?? ""] ?? "var(--ov-st)" }} />}
-      <div className="sp-path" title={path}>
+      {!style && <span className="qp-stripe" style={{ background: PALETTE[task.color ?? ""] ?? "var(--ov-st)" }} />}
+      <div className="qp-path" title={path}>
         {path}
       </div>
-      <div className="sp-main">
+      <div className="qp-main">
         <button
-          className="sp-status"
+          className="qp-status"
           title={`${META[task.status].label} — сменить статус`}
           onClick={(e) => {
             e.stopPropagation();
@@ -521,7 +521,7 @@ function Block({ task, statusColors, greenDone, onPointerDown, onOpen, onCycle }
         >
           <Icon size={16} strokeWidth={2.2} />
         </button>
-        <span className={`sp-text${task.title ? "" : " is-empty"}`}>{task.title || "Без названия"}</span>
+        <span className={`qp-text${task.title ? "" : " is-empty"}`}>{task.title || "Без названия"}</span>
       </div>
     </div>
   );

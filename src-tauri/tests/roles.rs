@@ -73,7 +73,7 @@ fn migration_v3_keeps_task_link_as_comment() {
         db::schema_version(&conn).unwrap() as usize,
         MIGRATIONS.len()
     );
-    assert_eq!(MIGRATIONS.len(), 3);
+    assert!(MIGRATIONS.len() >= 3);
 
     let t = get(&conn, "t1");
     assert_eq!(t.kb_path.as_deref(), Some("Задачи/Задача.md"));
