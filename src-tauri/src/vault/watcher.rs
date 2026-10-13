@@ -56,7 +56,7 @@ fn relevant(root: &Path, abs: &Path) -> Option<String> {
         return None;
     }
     let name = rel.rsplit('/').next().unwrap_or("");
-    if is_md(name) || abs.is_dir() || !abs.exists() {
+    if is_md(name) || super::links::is_image(name) || abs.is_dir() || !abs.exists() {
         Some(rel)
     } else {
         None

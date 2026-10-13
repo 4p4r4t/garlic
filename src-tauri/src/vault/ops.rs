@@ -7,6 +7,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::links::is_image;
 use super::paths::{self, file_name, is_hidden, is_md, join_rel, parent_rel};
 use super::{links, names, Backlink, EntryKind, NoteFile, SearchHit, SearchLine, VaultEntry};
 use crate::error::{AppError, AppResult};
@@ -97,19 +98,23 @@ fn read_dir_entries(abs: &Path, rel: &str) -> AppResult<Vec<VaultEntry>> {
                 mtime: mtime_ms(&entry.path()),
                 children: Some(children),
             });
-        } else if ft.is_file() && is_md(&name) {
+        } else if ft.is_file() && (is_md(&name) || is_image(&name)) {
             out.push(VaultEntry {
+                kind: if is_md(&name) {
+                    EntryKind::Note
+                } else {
+                    EntryKind::Image
+                },
                 name,
                 path,
-                kind: EntryKind::Note,
                 mtime: mtime_ms(&entry.path()),
                 children: None,
             });
         }
     }
     out.sort_by(|a, b| {
-        (a.kind == EntryKind::Note)
-            .cmp(&(b.kind == EntryKind::Note))
+        (a.kind != EntryKind::Folder)
+            .cmp(&(b.kind != EntryKind::Folder))
             .then_with(|| natural_cmp(&a.name, &b.name))
     });
     Ok(out)
@@ -117,16 +122,27 @@ fn read_dir_entries(abs: &Path, rel: &str) -> AppResult<Vec<VaultEntry>> {
 
 /// Плоский список всех заметок (пути `.md`).
 pub fn list_notes(root: &Path) -> AppResult<Vec<String>> {
-    fn walk(entries: Vec<VaultEntry>, out: &mut Vec<String>) {
+    list_kinds(root, false)
+}
+
+/// Заметки и картинки: всё, на что можно сослаться из заметки.
+pub fn list_linkable(root: &Path) -> AppResult<Vec<String>> {
+    list_kinds(root, true)
+}
+
+fn list_kinds(root: &Path, images: bool) -> AppResult<Vec<String>> {
+    fn walk(entries: Vec<VaultEntry>, images: bool, out: &mut Vec<String>) {
         for e in entries {
             match e.kind {
                 EntryKind::Note => out.push(e.path),
-                EntryKind::Folder => walk(e.children.unwrap_or_default(), out),
+                EntryKind::Image if images => out.push(e.path),
+                EntryKind::Image => {}
+                EntryKind::Folder => walk(e.children.unwrap_or_default(), images, out),
             }
         }
     }
     let mut out = Vec::new();
-    walk(tree(root)?, &mut out);
+    walk(tree(root)?, images, &mut out);
     Ok(out)
 }
 
@@ -283,8 +299,23 @@ fn move_path(from_rel: &str, from: &Path, to_rel: &str, to: &Path) -> AppResult<
 /// удваивается). Имя очищается (`names::sanitize`). Возвращает новый путь.
 pub fn rename(root: &Path, rel: &str, new_name: &str) -> AppResult<String> {
     let (rel, abs) = existing(root, rel)?;
-    let is_note = abs.is_file();
-    let name = if is_note {
+    let name = if abs.is_file() && is_image(&rel) {
+        // Картинка: расширение остаётся прежним (если его набрали — не удваивается).
+        let ext = rel.rsplit('.').next().unwrap_or("png");
+        let typed = new_name.trim();
+        let stem = typed
+            .strip_suffix(&format!(".{ext}"))
+            .or_else(|| {
+                typed
+                    .len()
+                    .checked_sub(ext.len() + 1)
+                    .and_then(|n| typed.get(n..))
+                    .filter(|t| t.eq_ignore_ascii_case(&format!(".{ext}")))
+                    .map(|_| &typed[..typed.len() - ext.len() - 1])
+            })
+            .unwrap_or(typed);
+        format!("{}.{ext}", names::sanitize(stem))
+    } else if abs.is_file() {
         format!("{}.md", names::sanitize(strip_md(new_name)))
     } else {
         names::sanitize(new_name)
@@ -314,13 +345,74 @@ pub fn move_to(root: &Path, rel: &str, new_dir: &str) -> AppResult<String> {
     Ok(to_rel)
 }
 
+/// Картинки больше этого не читаются в просмотр.
+const MAX_IMAGE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Байты картинки vault для показа в заметке / просмотре. Только файлы с
+/// расширением картинки внутри vault.
+pub fn read_image(root: &Path, rel: &str) -> AppResult<Vec<u8>> {
+    let rel = paths::normalize_rel(rel)?;
+    if !is_image(&rel) {
+        return Err(AppError::Invalid(format!("не картинка: {rel}")));
+    }
+    let abs = paths::resolve(root, &rel)?;
+    let meta = fs::metadata(&abs).map_err(|e| not_found_or(e, || format!("картинка {rel}")))?;
+    if !meta.is_file() {
+        return Err(AppError::Invalid(format!("не файл: {rel}")));
+    }
+    if meta.len() > MAX_IMAGE_BYTES {
+        return Err(AppError::Invalid(format!(
+            "картинка слишком большая: {rel}"
+        )));
+    }
+    Ok(fs::read(abs)?)
+}
+
+/// Сохраняет вложение (картинку) в папку `dir` vault (создаётся на лету), имя
+/// очищается, при занятом — ` 2`… Расширение должно быть картинкой. → путь.
+pub fn save_attachment(root: &Path, dir: &str, file_name: &str, bytes: &[u8]) -> AppResult<String> {
+    if !is_image(file_name) {
+        return Err(AppError::Invalid(format!(
+            "вложение должно быть картинкой (png/jpg/gif/webp/svg): {file_name}"
+        )));
+    }
+    if bytes.is_empty() || bytes.len() as u64 > MAX_IMAGE_BYTES {
+        return Err(AppError::Invalid(
+            "пустая или слишком большая картинка".into(),
+        ));
+    }
+    let dir = paths::normalize_rel(dir)?;
+    // Папку вложений создаём по частям: каждый уровень проверяется `resolve`.
+    let mut cur = String::new();
+    for part in dir.split('/').filter(|p| !p.is_empty()) {
+        cur = join_rel(&cur, part);
+        let abs = paths::resolve(root, &cur)?;
+        if !abs.is_dir() {
+            fs::create_dir(&abs)?;
+        }
+    }
+    let dir_abs = ensure_dir(root, &dir)?;
+    let (stem, ext) = file_name.rsplit_once('.').unwrap_or((file_name, "png"));
+    let file = names::unique_name(
+        &dir_abs,
+        &names::sanitize(stem),
+        &format!(".{}", ext.to_ascii_lowercase()),
+    );
+    let mut f = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dir_abs.join(&file))?;
+    f.write_all(bytes)?;
+    Ok(join_rel(&dir, &file))
+}
+
 /// Удаление в корзину ОС (не насовсем, ТЗ §4.10).
 pub fn delete(root: &Path, rel: &str) -> AppResult<()> {
     let (_, abs) = existing(root, rel)?;
     trash::delete(&abs).map_err(|e| AppError::Other(format!("не удалось удалить в корзину: {e}")))
 }
 
-fn read_small(root: &Path, rel: &str) -> Option<String> {
+pub fn read_small(root: &Path, rel: &str) -> Option<String> {
     let abs = paths::resolve(root, rel).ok()?;
     if fs::metadata(&abs).ok()?.len() > MAX_SCAN_BYTES {
         return None;

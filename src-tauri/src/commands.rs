@@ -83,16 +83,37 @@ pub async fn create_node(db: Cmd<'_>, vault: V<'_>, input: NewNode) -> AppResult
     crate::kblink::create_node(&*db.conn()?, root.as_deref(), &input)
 }
 
-/// У ноды-заметки новый заголовок переименовывает её `.md` (ТЗ §4.10).
+/// У ноды-заметки новый заголовок переименовывает её `.md` (ТЗ §4.10), ссылки
+/// `[[…]]` на неё в других заметках обновляются (если включено, M6c).
 #[tauri::command]
 pub async fn update_node(
+    app: tauri::AppHandle,
     db: Cmd<'_>,
     vault: V<'_>,
     id: String,
     patch: NodePatch,
 ) -> AppResult<Node> {
     let root = vault.root().ok();
-    crate::kblink::update_node(&*db.conn()?, root.as_deref(), &id, &patch)
+    let (before, old_path) = match (&root, patch.title.is_some()) {
+        (Some(root), true) => {
+            let conn = db.conn()?;
+            let old = repo::nodes::get(&conn, &id)?;
+            let snap = (old.kind == crate::model::NodeKind::Note && update_links_enabled(&conn))
+                .then(|| vault::relink::snapshot(root).ok())
+                .flatten();
+            (snap, old.kb_path)
+        }
+        _ => (None, None),
+    };
+    let node = crate::kblink::update_node(&*db.conn()?, root.as_deref(), &id, &patch)?;
+    if let (Some(root), Some(before), Some(old), Some(new)) =
+        (&root, &before, old_path, &node.kb_path)
+    {
+        if old != *new {
+            relink_and_emit(&app, root, before, old, new.clone());
+        }
+    }
+    Ok(node)
 }
 
 #[tauri::command]
@@ -181,6 +202,45 @@ pub fn vault_events_handler(app: tauri::AppHandle) -> impl Fn(Vec<vault::VaultEv
 
 /// Имя Tauri-события с пачкой `VaultEvent`.
 pub const VAULT_EVENT: &str = "vault:changed";
+/// Имя Tauri-события с итогом переписывания ссылок (`RelinkReport`), M6c.
+pub const LINKS_EVENT: &str = "vault:links-updated";
+
+/// Включено ли «Обновлять ссылки при переименовании» (по умолчанию да).
+pub fn update_links_enabled(conn: &Connection) -> bool {
+    repo::app_state::get(conn, vault::relink::UPDATE_LINKS_KEY)
+        .ok()
+        .flatten()
+        .is_none_or(|v| v != "0")
+}
+
+/// Снимок файлов vault до переименования/перемещения (если опция включена).
+fn relink_snapshot(db: &Db, root: &std::path::Path) -> AppResult<Option<Vec<String>>> {
+    if !update_links_enabled(&*db.conn()?) {
+        return Ok(None);
+    }
+    Ok(vault::relink::snapshot(root).ok())
+}
+
+/// Переписывает ссылки после переноса `old` -> `new` и сообщает фронту итог
+/// (событие `vault:links-updated`, только если что-то переписано). Ошибка
+/// переписывания не отменяет уже выполненное переименование.
+fn relink_and_emit(
+    app: &tauri::AppHandle,
+    root: &std::path::Path,
+    before: &[String],
+    old: String,
+    new: String,
+) {
+    use tauri::Emitter;
+    let mv = vault::Move { from: old, to: new };
+    match vault::relink::rewrite(root, before, &mv) {
+        Ok(report) if report.links > 0 => {
+            let _ = app.emit(LINKS_EVENT, report);
+        }
+        Ok(_) => {}
+        Err(e) => eprintln!("[garlic] обновление ссылок: {e}"),
+    }
+}
 
 #[tauri::command]
 pub async fn vault_info(vault: V<'_>) -> AppResult<VaultInfo> {
@@ -254,28 +314,40 @@ pub async fn vault_create_folder(vault: V<'_>, dir: String, name: String) -> App
 /// (`kb_path`) на сам путь и всё внутри папки переписываются. → новый путь.
 #[tauri::command]
 pub async fn vault_rename(
+    app: tauri::AppHandle,
     db: Cmd<'_>,
     vault: V<'_>,
     path: String,
     new_name: String,
 ) -> AppResult<String> {
     let old = vault::paths::normalize_rel(&path)?;
-    let new = ops::rename(&vault.root()?, &old, &new_name)?;
+    let root = vault.root()?;
+    let before = relink_snapshot(&db, &root)?;
+    let new = ops::rename(&root, &old, &new_name)?;
     repo::kb::rewrite_prefix(&*db.conn()?, &old, &new)?;
+    if let Some(before) = before {
+        relink_and_emit(&app, &root, &before, old, new.clone());
+    }
     Ok(new)
 }
 
 /// Перемещение в папку `new_dir` (`""` — корень). Ссылки нод переписываются. → новый путь.
 #[tauri::command]
 pub async fn vault_move(
+    app: tauri::AppHandle,
     db: Cmd<'_>,
     vault: V<'_>,
     path: String,
     new_dir: String,
 ) -> AppResult<String> {
     let old = vault::paths::normalize_rel(&path)?;
-    let new = ops::move_to(&vault.root()?, &old, &new_dir)?;
+    let root = vault.root()?;
+    let before = relink_snapshot(&db, &root)?;
+    let new = ops::move_to(&root, &old, &new_dir)?;
     repo::kb::rewrite_prefix(&*db.conn()?, &old, &new)?;
+    if let Some(before) = before {
+        relink_and_emit(&app, &root, &before, old, new.clone());
+    }
     Ok(new)
 }
 
@@ -353,12 +425,21 @@ pub async fn kb_create_target(
 /// переносится в неё (ссылки нод на заметку переписываются). → путь папки.
 #[tauri::command]
 pub async fn kb_note_to_folder(
+    app: tauri::AppHandle,
     db: Cmd<'_>,
     vault: V<'_>,
     path: String,
     folder_name: String,
 ) -> AppResult<String> {
-    crate::kblink::note_to_folder(&*db.conn()?, &vault.root()?, &path, &folder_name)
+    let root = vault.root()?;
+    let before = relink_snapshot(&db, &root)?;
+    let folder = crate::kblink::note_to_folder(&*db.conn()?, &root, &path, &folder_name)?;
+    if let Some(before) = before {
+        let old = vault::paths::normalize_rel(&path)?;
+        let new = vault::paths::join_rel(&folder, vault::paths::file_name(&old));
+        relink_and_emit(&app, &root, &before, old, new);
+    }
+    Ok(folder)
 }
 
 /// Существование путей ссылок и превью заметок (битые ссылки, карточки заметок).
@@ -366,4 +447,42 @@ pub async fn kb_note_to_folder(
 pub async fn kb_stat(vault: V<'_>, paths: Vec<String>) -> AppResult<Vec<crate::kblink::KbStat>> {
     let root = vault.root().ok();
     Ok(crate::kblink::stat(root.as_deref(), &paths))
+}
+
+// ---- картинки в заметках (M6c) ----
+
+/// Байты картинки vault (png/jpg/gif/webp/svg) - сырой ответ, без base64.
+/// Фронт делает из них Blob. Выбрано вместо asset-протокола: путь vault
+/// динамический, а команда сама проверяет, что путь внутри vault и это картинка.
+#[tauri::command]
+pub async fn vault_read_image(vault: V<'_>, path: String) -> AppResult<tauri::ipc::Response> {
+    Ok(tauri::ipc::Response::new(ops::read_image(
+        &vault.root()?,
+        &path,
+    )?))
+}
+
+/// Сохраняет картинку из буфера/перетаскивания в папку вложений (настройка
+/// `kb.attachments_folder`, по умолчанию `Вложения`; создаётся на лету).
+/// Тело запроса - сырые байты, имя файла - заголовок `x-name` (URL-кодирован).
+/// Возвращает путь файла в vault.
+#[tauri::command]
+pub async fn vault_save_attachment(
+    db: Cmd<'_>,
+    vault: V<'_>,
+    request: tauri::ipc::Request<'_>,
+) -> AppResult<String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err(AppError::Invalid("ожидались байты картинки".into()));
+    };
+    let name = request
+        .headers()
+        .get("x-name")
+        .and_then(|v| v.to_str().ok())
+        .map(vault::links::percent_decode)
+        .unwrap_or_default();
+    let dir = repo::app_state::get(&*db.conn()?, vault::ATTACHMENTS_KEY)?
+        .map(|d| d.trim().to_owned())
+        .unwrap_or_else(|| vault::DEFAULT_ATTACHMENTS.to_owned());
+    ops::save_attachment(&vault.root()?, &dir, &name, bytes)
 }
