@@ -7,11 +7,13 @@ import {
   type EdgeChange,
   type NodeChange,
 } from "@xyflow/react";
+import { listen } from "@tauri-apps/api/event";
 import { create } from "zustand";
 
 import {
   api,
   APP_STATE,
+  BLOCKS_EVENT,
   errorMessage,
   type Canvas,
   type CanvasData,
@@ -24,7 +26,9 @@ import {
   type NodePlace,
   type NodePosition,
   type RegionChange,
+  type BlockSync,
   type Space,
+  type StickResult,
   type SubtreeLevel,
   type TaskStatus,
   type Viewport,
@@ -87,7 +91,12 @@ export interface NestedSelection {
   ids: Set<string>;
 }
 
-export const NEXT_STATUS: Record<TaskStatus, TaskStatus> = {
+/**
+ * Следующий статус по кругу (маркер, Space, панель списков). «Заблокирована»
+ * и «Чужая» в круг не входят и из них круг не ведёт: они ставятся и снимаются
+ * только через ПКМ (ТЗ §4.12.7).
+ */
+export const NEXT_STATUS: Partial<Record<TaskStatus, TaskStatus>> = {
   todo: "in_progress",
   in_progress: "done",
   done: "todo",
@@ -180,7 +189,26 @@ interface GraphState {
   ) => Promise<void>;
 
   showError: (e: unknown) => void;
+  /** Информационное уведомление (тот же тост, спокойный цвет). */
+  notify: (msg: string) => void;
+  toastKind: "error" | "info";
   dismissToast: () => void;
+
+  // --- M7c: блокировки (ТЗ §4.12.7) ---
+  /** «Заблокировать…»: стикер «Чужая» с причиной на задаче; null — ошибка показана. */
+  blockTask: (canvasId: string, taskId: string, reason: string) => Promise<NodeModel | null>;
+  /** Приклеить (`target`) / оторвать (`target` null) стикер — см. `api.stick`. */
+  stick: (
+    canvasId: string,
+    id: string,
+    target: string | null,
+    pos: { x: number; y: number } | null,
+    edgeId: string | null,
+  ) => Promise<StickResult | null>;
+  /** Итог пересчёта блокировок из Rust: статусы в кэш, тост «Разблокировано: …». */
+  applyBlockSync: (sync: BlockSync) => void;
+  /** Перечитать один холст поверх кэша (+ просвечивание). */
+  refreshCanvas: (canvasId: string) => Promise<void>;
 
   // --- v1.2: групповые действия, цвета статусов ---
   /** Цвет заливки по статусу (настройки, app_state.status_colors). */
@@ -267,7 +295,9 @@ export function mergeView(old: CanvasView | undefined, data: CanvasData): Canvas
     nodes: data.nodes.map((m): FlowNode => {
       const fresh = toFlowNode(m, progress.get(m.id));
       const prev = oldNodes.get(m.id);
-      return prev ? { ...prev, position: fresh.position, data: fresh.data } : fresh;
+      return prev
+        ? { ...prev, position: fresh.position, data: fresh.data, parentId: fresh.parentId, className: fresh.className }
+        : fresh;
     }),
     edges: data.edges.map((e) => {
       const fresh = toFlowEdge(e);
@@ -298,6 +328,11 @@ let initPromise: Promise<void> | null = null;
  * поздние ответы прежних навигаций игнорируются.
  */
 let navSeq = 0;
+/** Тост «Разблокировано» молчит, пока идёт undo/redo (там своя подсказка). */
+let blockToastMuted = false;
+export function muteBlockToast(on: boolean) {
+  blockToastMuted = on;
+}
 
 export const useGraph = create<GraphState>()((set, get) => {
   /** Применяет fn к холсту из кэша (если он загружен). */
@@ -573,6 +608,8 @@ export const useGraph = create<GraphState>()((set, get) => {
           const moveWithSubtasks = (await api.getAppState(APP_STATE.moveWithSubtasks)) === "1";
           const statusColors = parseStatusColors(await api.getAppState(APP_STATE.statusColors));
           set({ showNested, highlight, moveWithSubtasks, statusColors });
+          // Пересчёт блокировок в Rust (ТЗ §4.12.7): статусы задач — в кэш.
+          void listen<BlockSync>(BLOCKS_EVENT, (e) => get().applyBlockSync(e.payload));
           const data = await api.loadCanvas(space.rootCanvas);
           const ex = await fetchExtras(space.rootCanvas, true);
           viewportBus.reset(data.canvas.viewport);
@@ -657,7 +694,9 @@ export const useGraph = create<GraphState>()((set, get) => {
       const node = get().canvases[canvasId]?.nodes.find((n) => n.id === id);
       const status = node?.data.model.status;
       if (!node || node.data.model.kind !== "task" || !status) return;
-      void get().updateNode(canvasId, id, { status: NEXT_STATUS[status] });
+      const next = NEXT_STATUS[status];
+      // «Заблокирована» / «Чужая» — только через ПКМ (ТЗ §4.12.7).
+      if (next) void get().updateNode(canvasId, id, { status: next });
     },
 
     queueMove: (canvasId, positions) => {
@@ -1071,7 +1110,77 @@ export const useGraph = create<GraphState>()((set, get) => {
       console.error("[garlic]", msg);
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => set({ toast: null }), TOAST_MS);
-      set({ toast: msg });
+      set({ toast: msg, toastKind: "error" });
+    },
+    notify: (msg) => {
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => set({ toast: null }), TOAST_MS);
+      set({ toast: msg, toastKind: "info" });
+    },
+    toastKind: "error",
+
+    refreshCanvas: async (canvasId) => {
+      try {
+        const data = await api.loadCanvas(canvasId);
+        set((s) =>
+          s.canvases[canvasId] ? { canvases: { ...s.canvases, [canvasId]: mergeView(s.canvases[canvasId], data) } } : {},
+        );
+      } catch (e) {
+        get().showError(e);
+      }
+      refreshOwnerProgress(canvasId);
+      await refreshSubtree();
+    },
+
+    blockTask: async (canvasId, taskId, reason) => {
+      try {
+        const model = await api.blockTask(taskId, reason);
+        await get().refreshCanvas(canvasId);
+        return model;
+      } catch (e) {
+        get().showError(e);
+        return null;
+      }
+    },
+
+    stick: async (canvasId, id, target, pos, edgeId) => {
+      flushAll();
+      try {
+        const res = await api.stick(id, target, pos, edgeId);
+        await get().refreshCanvas(canvasId);
+        return res;
+      } catch (e) {
+        get().showError(e);
+        await get().refreshCanvas(canvasId);
+        return null;
+      }
+    },
+
+    applyBlockSync: (sync) => {
+      const changed = new Map([...sync.blocked, ...sync.unblocked].map((m) => [m.id, m]));
+      if (!changed.size) return;
+      const touched = new Set<string>();
+      set((s) => {
+        const canvases = { ...s.canvases };
+        for (const [cid, v] of Object.entries(canvases)) {
+          if (!v.nodes.some((n) => changed.has(n.id))) continue;
+          touched.add(cid);
+          canvases[cid] = {
+            ...v,
+            nodes: v.nodes.map((n) => {
+              const m = changed.get(n.id);
+              return m ? { ...n, data: { ...n.data, model: { ...m, x: n.data.model.x, y: n.data.model.y } } } : n;
+            }),
+          };
+        }
+        return { canvases };
+      });
+      touched.forEach((cid) => refreshOwnerProgress(cid));
+      void refreshSubtree();
+      if (sync.unblocked.length && !blockToastMuted) {
+        const names = sync.unblocked.map((m) => `«${m.title || "Без названия"}»`).join(", ");
+        get().notify(`Разблокировано: ${names}`);
+      }
     },
     dismissToast: () => set({ toast: null }),
 
@@ -1091,8 +1200,16 @@ export const useGraph = create<GraphState>()((set, get) => {
       const view = get().canvases[canvasId];
       if (!view) return;
       const want = new Set(ids);
+      if (status === "blocked") return;
+      // Заблокированные пропускаются (их статус меняет только разблокировка).
       const tasks = view.nodes
-        .filter((n) => want.has(n.id) && n.data.model.kind === "task" && n.data.model.status !== status)
+        .filter(
+          (n) =>
+            want.has(n.id) &&
+            n.data.model.kind === "task" &&
+            n.data.model.status !== status &&
+            n.data.model.status !== "blocked",
+        )
         .map((n) => n.id);
       if (!tasks.length) return;
       const changed = new Set(tasks);

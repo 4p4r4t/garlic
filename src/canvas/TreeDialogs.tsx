@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { create } from "zustand";
-import { ArrowUpToLine, FolderInput, Trash2, Unlink } from "lucide-react";
+import { ArrowUpToLine, FolderInput, StickyNote, Trash2, Unlink } from "lucide-react";
 
 import { api, type DeleteMode, type GraphNodeHit } from "../api";
 import { fuzzy } from "../kb/fuzzy";
@@ -28,7 +28,18 @@ interface MoveAsk {
   what: string;
 }
 
+/** «Разблокировать» задачу со стикерами (ТЗ §4.12.7): удалить их или оторвать. */
+export type UnblockChoice = "delete" | "detach";
+
+interface UnblockAsk {
+  title: string;
+  stickers: number;
+  resolve: (choice: UnblockChoice | null) => void;
+}
+
 interface DialogState {
+  unblockAsk: UnblockAsk | null;
+  askUnblock: (info: Omit<UnblockAsk, "resolve">) => Promise<UnblockChoice | null>;
   deleteAsk: DeleteAsk | null;
   move: MoveAsk | null;
   /** Спросить, что делать с подзадачами; null — отмена. */
@@ -38,6 +49,20 @@ interface DialogState {
 }
 
 export const useTreeDialogs = create<DialogState>()((set, get) => ({
+  unblockAsk: null,
+  askUnblock: (info) =>
+    new Promise((resolve) => {
+      get().unblockAsk?.resolve(null);
+      set({
+        unblockAsk: {
+          ...info,
+          resolve: (c) => {
+            set({ unblockAsk: null });
+            resolve(c);
+          },
+        },
+      });
+    }),
   deleteAsk: null,
   move: null,
   askDelete: (info) =>
@@ -302,6 +327,57 @@ function MovePickerImpl({ move }: { move: MoveAsk }) {
           })}
           {all && !results.length && <div className="gs-empty">Ничего не найдено</div>}
           {!all && <div className="gs-empty">Загрузка…</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** «Разблокировать» задачу со стикерами (ТЗ §4.12.7): удалить стикеры или оторвать их. */
+export function UnblockDialog() {
+  const ask = useTreeDialogs((s) => s.unblockAsk);
+  if (!ask) return null;
+  const cancel = () => ask.resolve(null);
+  const many = ask.stickers > 1;
+  return (
+    <div
+      className="gm-backdrop"
+      onPointerDown={(e) => e.target === e.currentTarget && cancel()}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          e.preventDefault();
+          cancel();
+        }
+        e.stopPropagation();
+      }}
+    >
+      <div className="gm-dialog" role="dialog" aria-label="Разблокировать задачу">
+        <div className="gm-title">Разблокировать «{ask.title || "Без названия"}»</div>
+        <div className="gm-text">
+          {many ? `На задаче ${ask.stickers} стикера-причины.` : "На задаче стикер-причина."} Что с {many ? "ними" : "ним"} сделать?
+        </div>
+        <div className="gm-choices">
+          <button type="button" className="gm-choice is-danger" onClick={() => ask.resolve("delete")}>
+            <Trash2 size={15} />
+            <span className="gm-choice-text">
+              <span className="gm-choice-label">{many ? "Удалить стикеры" : "Удалить стикер"}</span>
+              <span className="gm-choice-hint">Причина больше не нужна</span>
+            </span>
+          </button>
+          <button type="button" className="gm-choice" autoFocus onClick={() => ask.resolve("detach")}>
+            <StickyNote size={15} />
+            <span className="gm-choice-text">
+              <span className="gm-choice-label">{many ? "Оторвать стикеры" : "Оторвать стикер"}</span>
+              <span className="gm-choice-hint">
+                Остаются задачами «Чужая» рядом, но больше не блокируют
+              </span>
+            </span>
+          </button>
+        </div>
+        <div className="gm-actions">
+          <button type="button" className="gm-btn" onClick={cancel}>
+            Отмена
+          </button>
         </div>
       </div>
     </div>

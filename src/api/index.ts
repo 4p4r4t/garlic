@@ -7,6 +7,7 @@ import { serial, serialVault } from "./queue";
 
 import type {
   Backlink,
+  StickResult,
   Canvas,
   CanvasData,
   DeleteMode,
@@ -90,6 +91,9 @@ export const DEFAULT_COMMENT_FOLDER = "Задачи";
 export const DEFAULT_RESULT_FOLDER = "Результаты";
 export const DEFAULT_ATTACHMENTS_FOLDER = "Вложения";
 
+/** Tauri-событие с итогом пересчёта блокировок (`BlockSync`, ТЗ §4.12.7). */
+export const BLOCKS_EVENT = "graph:blocks";
+
 /** Tauri-событие watcher'а с пачкой `VaultEvent[]`. */
 export const VAULT_EVENT = "vault:changed";
 /** Tauri-событие с итогом переписывания ссылок (`RelinkReport`), M6c. */
@@ -120,6 +124,21 @@ export const api = {
   moveNodes: (positions: NodePosition[]) => invoke<void>("move_nodes", { positions }),
   deleteNodes: (ids: string[]) => invoke<number>("delete_nodes", { ids }),
   countDescendants: (nodeId: string) => invoke<number>("count_descendants", { nodeId }),
+
+  // блокировки (ТЗ §4.12.7)
+  /** «Заблокировать…»: стикер «Чужая» с причиной на задаче → стикер. */
+  blockTask: (taskId: string, reason: string) => invoke<NodeModel>("block_task", { taskId, reason }),
+  /**
+   * Приклеить ноду стикером к задаче `target` (pos — смещение от её угла; null —
+   * свободное место) или оторвать (`target` null, pos — мировые координаты;
+   * `edgeId` — провести стрелку «блокирует» с этим id к прежней задаче).
+   */
+  stick: (
+    id: string,
+    target: string | null,
+    pos: { x: number; y: number } | null,
+    edgeId: string | null = null,
+  ) => invoke<StickResult>("stick", { id, target, x: pos?.x ?? null, y: pos?.y ?? null, edgeId }),
 
   // связи
   createEdge: (input: NewEdge) => invoke<EdgeModel>("create_edge", { input }),

@@ -92,11 +92,15 @@ export function CanvasHotkeys({
         g.cycleStatus(canvasId, tasks[0].id);
       } else {
         const first: TaskStatus = tasks[0].data.model.status ?? "todo";
-        void g.setStatusMany(
-          canvasId,
-          tasks.map((n) => n.id),
-          NEXT_STATUS[first],
-        );
+        // Первая выделенная «Заблокирована»/«Чужая» — Space ничего не делает (ТЗ §4.12.7).
+        const next = NEXT_STATUS[first];
+        if (next) {
+          void g.setStatusMany(
+            canvasId,
+            tasks.map((n) => n.id),
+            next,
+          );
+        }
       }
       return true;
     };

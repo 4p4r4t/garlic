@@ -10,7 +10,7 @@ import {
   type VaultInfo,
 } from "../api";
 import { KbPicker } from "../canvas/KbPicker";
-import { StatusIcon, STATUS_META } from "../canvas/NodeParts";
+import { ALL_STATUSES, StatusIcon, STATUS_META } from "../canvas/NodeParts";
 import { PALETTE } from "../canvas/palette";
 import { useGraph, useStatusColors } from "../store/graph";
 import { useKbLinks } from "../store/kbLinks";
@@ -22,7 +22,7 @@ interface Props {
   onClose: () => void;
 }
 
-const STATUSES: TaskStatus[] = ["todo", "in_progress", "done"];
+const STATUSES: readonly TaskStatus[] = ALL_STATUSES;
 
 /**
  * Панель настроек (ТЗ §4.6.2): цвета статусов (палитра или «нет»), показ

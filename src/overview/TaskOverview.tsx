@@ -8,20 +8,17 @@
 // когда становятся «Готово» (зелёные).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, ChevronDown, Circle, CircleCheck, CircleDot, Layers, Pin } from "lucide-react";
+import { Check, ChevronDown, Layers, Pin } from "lucide-react";
 
 import { api, APP_STATE, type PanelTask, type TaskStatus } from "../api";
+import { ALL_STATUSES, STATUS_META } from "../canvas/NodeParts";
 import { fillStyle, PALETTE } from "../canvas/palette";
 import { cameraFocus } from "../layers/CameraFocus";
 import { NEXT_STATUS, useGraph, useStatusColors } from "../store/graph";
 
-const STATUSES: TaskStatus[] = ["todo", "in_progress", "done"];
-
-const META: Record<TaskStatus, { icon: typeof Circle; label: string }> = {
-  todo: { icon: Circle, label: "К выполнению" },
-  in_progress: { icon: CircleDot, label: "В работе" },
-  done: { icon: CircleCheck, label: "Готово" },
-};
+/** Кнопки рейла: все статусы, включая «Заблокирована» и «Чужая» (ТЗ §4.12.7). */
+const STATUSES = ALL_STATUSES;
+const META = STATUS_META;
 
 const MIN_W = 260;
 const MAX_W = 640;
@@ -200,6 +197,8 @@ export function TaskOverview() {
 
   const cycle = async (task: PanelTask) => {
     const next = NEXT_STATUS[task.status];
+    // «Заблокирована» / «Чужая» — только через ПКМ на холсте.
+    if (!next) return;
     setTasks((list) => list?.map((t) => (t.id === task.id ? { ...t, status: next } : t)) ?? list);
     await setTaskStatus(task.canvasId, task.id, next, task.parentNodeId);
     await load();
@@ -513,7 +512,12 @@ function Block({ task, statusColors, greenDone, onPointerDown, onOpen, onCycle }
       <div className="qp-main">
         <button
           className="qp-status"
-          title={`${META[task.status].label} — сменить статус`}
+          disabled={!NEXT_STATUS[task.status]}
+          title={
+            NEXT_STATUS[task.status]
+              ? `${META[task.status].label} — сменить статус`
+              : `${META[task.status].label} — меняется через ПКМ по задаче`
+          }
           onClick={(e) => {
             e.stopPropagation();
             onCycle();

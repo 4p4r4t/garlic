@@ -10,7 +10,7 @@ import type { FlowNode, Progress } from "../canvas/flow";
 import { NodeHandles } from "../canvas/NodeHandles";
 import { COMMENT_LINK, NOTE_FILE, RESULT_LINK } from "../canvas/kbLink";
 import { KbLinkField } from "../canvas/KbLinkField";
-import { PlainTitle, ProgressBadge, StatusIcon, STATUS_META } from "../canvas/NodeParts";
+import { PlainTitle, ProgressBadge, StatusIcon, StickerCard, STATUS_META } from "../canvas/NodeParts";
 import { fillStyle, nodeFillColor } from "../canvas/palette";
 import { useStatusColors } from "../store/graph";
 import { useKbStat } from "../store/kbLinks";
@@ -21,10 +21,32 @@ import { useKbStat } from "../store/kbLinks";
  * нижнего уровня); клик — выход из слоя; хэндлы работают как начало стрелки
  * «родитель → подзадача». Бейдж прогресса — живой, из задач слоя.
  */
+/** Картинка стикера (ТЗ §4.12.7) вне его холста: просвечивание, соседи, якорь. */
+function StickerView({ model: m, className }: { model: NodeModel; className?: string }) {
+  const fill = nodeFillColor(m, useStatusColors());
+  const status = m.status ?? "foreign";
+  return (
+    <StickerCard
+      model={m}
+      fill={fillStyle(fill)}
+      className={className}
+      title={<PlainTitle model={m} placeholder="Без названия" />}
+      marker={
+        <span className="status-marker">
+          <StatusIcon status={status} />
+        </span>
+      }
+    >
+      <NodeHandles inert />
+    </StickerCard>
+  );
+}
+
 function AnchorNodeImpl({ data }: NodeProps<FlowNode>) {
   const m = data.model;
   const status = m.status ?? "todo";
   const fill = nodeFillColor(m, useStatusColors());
+  if (m.stickerOf) return <StickerView model={m} className="is-anchor" />;
   return (
     <div
       className={`g-node g-task status-${status} is-anchor${fill ? " is-filled" : ""}`}
@@ -49,6 +71,7 @@ function GhostNodeImpl({ data }: NodeProps<FlowNode>) {
   const color = nodeFillColor(m, useStatusColors());
   const fill = fillStyle(color);
   const text = useKbStat(m.kind === "note" ? m.kbPath : null)?.preview;
+  if (m.stickerOf) return <StickerView model={m} className={`is-ghost ghost-d${depth}`} />;
   if (m.kind === "note") {
     return (
       <div className={`g-node g-note is-ghost ghost-d${depth}${color ? " is-filled" : ""}`} style={fill}>
@@ -92,6 +115,7 @@ function NeighborNodeImpl({ data }: NodeProps<FlowNode>) {
       <span>{parent}</span>
     </div>
   );
+  if (m.stickerOf) return <StickerView model={m} className="is-neighbor" />;
   if (m.kind === "note") {
     return (
       <div className={`g-node g-note is-neighbor${color ? " is-filled" : ""}`} style={fill}>

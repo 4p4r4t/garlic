@@ -1,7 +1,14 @@
 // Зеркало src-tauri/src/model.rs — держать синхронным.
 
 export type NodeKind = "task" | "note";
-export type TaskStatus = "todo" | "in_progress" | "done";
+/**
+ * Статус задачи. `blocked` («Заблокирована») ставится только блокировкой — у
+ * задачи есть незавершённый блокирующий (стикер или стрелка «блокирует»);
+ * `foreign` («Чужая») — чужая работа, им же создаются стикеры (ТЗ §4.12.7).
+ */
+export type TaskStatus = "todo" | "in_progress" | "done" | "blocked" | "foreign";
+/** Вид стрелки: обычная или «блокирует» (оторванный стикер → задача). */
+export type EdgeKind = "link" | "blocks";
 export type HandleSide = "top" | "right" | "bottom" | "left";
 
 export interface Viewport {
@@ -90,6 +97,13 @@ export interface NodeModel {
   kbResultPath: string | null;
   createdAt: number;
   updatedAt: number;
+  /** Только у заблокированной: статус, в который она вернётся при разблокировке. */
+  prevStatus?: TaskStatus | null;
+  /**
+   * Стикер (ТЗ §4.12.7): задача, к которой он приклеен. Тогда x/y — смещение
+   * от её левого верхнего угла, а не мировые координаты.
+   */
+  stickerOf?: string | null;
 }
 
 export interface EdgeModel {
@@ -100,6 +114,7 @@ export interface EdgeModel {
   sourceHandle: HandleSide | null;
   targetHandle: HandleSide | null;
   label: string | null;
+  kind?: EdgeKind;
 }
 
 /** Прогресс подзадач: задачи прямого вложенного холста (`done` из `total`). */
@@ -174,6 +189,19 @@ export interface NewEdge {
   target: string;
   sourceHandle: HandleSide | null;
   targetHandle: HandleSide | null;
+  kind?: EdgeKind;
+}
+
+/** Итог пересчёта блокировок (Tauri-событие `graph:blocks`). */
+export interface BlockSync {
+  blocked: NodeModel[];
+  unblocked: NodeModel[];
+}
+
+/** Результат `stick`: нода и созданная стрелка «блокирует» (при отрыве драгом). */
+export interface StickResult {
+  node: NodeModel;
+  edge: EdgeModel | null;
 }
 
 /** Задача пространства для обзора задач (`list_space_tasks`, ТЗ §4.6.1). */

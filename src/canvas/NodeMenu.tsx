@@ -1,8 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { Ban, FolderInput, Layers, ListTree, Palette, Trash2 } from "lucide-react";
+import { Ban, CircleDashed, FolderInput, Layers, ListTree, Lock, LockOpen, Palette, Trash2 } from "lucide-react";
 
-import type { NodeModel } from "../api";
+import type { NodeModel, TaskStatus } from "../api";
+import { StatusIcon, STATUS_META } from "./NodeParts";
 import { PALETTE } from "./palette";
+
+/** Статусы подменю «Статус» (ТЗ §4.12.7): «Заблокирована» — только «Заблокировать…». */
+const MENU_STATUSES: TaskStatus[] = ["todo", "in_progress", "done", "foreign"];
 
 interface Props {
   model: NodeModel;
@@ -16,6 +20,12 @@ interface Props {
   onMoveTo: () => void;
   onDelete: () => void;
   onClose: () => void;
+  /** Подменю «Статус» (ТЗ §4.12.7). */
+  onStatus: (status: TaskStatus) => void;
+  /** «Заблокировать…»: причина → стикер «Чужая». */
+  onBlock: (reason: string) => void;
+  /** «Разблокировать». */
+  onUnblock: () => void;
 }
 
 const GAP = 8;
@@ -34,9 +44,17 @@ export function NodeMenu({
   onMoveTo,
   onDelete,
   onClose,
+  onStatus,
+  onBlock,
+  onUnblock,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
-  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [panel, setPanel] = useState<"palette" | "status" | "block" | null>(null);
+  const paletteOpen = panel === "palette";
+  const setPaletteOpen = (fn: (v: boolean) => boolean) => setPanel(fn(paletteOpen) ? "palette" : null);
+  const [reason, setReason] = useState("");
+  const blocked = model.status === "blocked";
+  const sticker = !!model.stickerOf;
   const [style, setStyle] = useState<CSSProperties>({ visibility: "hidden", left: 0, top: 0 });
 
   // Над нодой, по центру; если сверху нет места — под ней. Не вылезаем за края окна.
@@ -52,11 +70,12 @@ export function NodeMenu({
         ? { left, bottom: window.innerHeight - anchor.top + GAP }
         : { left, top: Math.min(anchor.bottom + GAP, window.innerHeight - height - EDGE) },
     );
-  }, [anchor, paletteOpen]);
+  }, [anchor, panel]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // Esc в поле причины — назад к подменю, а не закрыть всё.
+      if (e.key === "Escape" && !(e.target instanceof HTMLInputElement)) onClose();
     };
     const onDown = (e: PointerEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose();
@@ -107,6 +126,72 @@ export function NodeMenu({
           </button>
         </div>
       )}
+      {panel === "status" && (
+        <div className="node-menu-status" role="group" aria-label="Статус">
+          {MENU_STATUSES.map((st) => (
+            <button
+              key={st}
+              type="button"
+              role="menuitemradio"
+              aria-checked={model.status === st}
+              className={`nm-status status-${st}${model.status === st ? " is-active" : ""}`}
+              disabled={blocked || model.status === st}
+              title={blocked ? "Задача заблокирована — сначала разблокируйте" : STATUS_META[st].label}
+              onClick={() => onStatus(st)}
+            >
+              <StatusIcon status={st} />
+              <span>{STATUS_META[st].label}</span>
+            </button>
+          ))}
+          <span className="nm-sep" aria-hidden="true" />
+          {!sticker && (
+            <button
+              type="button"
+              role="menuitem"
+              className="nm-status status-blocked"
+              title="Заблокировать: причина станет стикером «Чужая» на задаче"
+              onClick={() => {
+                setReason("");
+                setPanel("block");
+              }}
+            >
+              <Lock size={15} strokeWidth={2} />
+              <span>Заблокировать…</span>
+            </button>
+          )}
+          {blocked && (
+            <button type="button" role="menuitem" className="nm-status" onClick={onUnblock}>
+              <LockOpen size={15} strokeWidth={2} />
+              <span>Разблокировать</span>
+            </button>
+          )}
+        </div>
+      )}
+      {panel === "block" && (
+        <form
+          className="node-menu-block"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (reason.trim()) onBlock(reason.trim());
+          }}
+        >
+          <Lock size={14} strokeWidth={2} />
+          <input
+            autoFocus
+            value={reason}
+            placeholder="Причина блокировки (Enter)"
+            aria-label="Причина блокировки"
+            onChange={(e) => setReason(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setPanel("status");
+              }
+            }}
+          />
+        </form>
+      )}
       <div className="node-menu-bar">
         <button
           type="button"
@@ -120,6 +205,19 @@ export function NodeMenu({
           <Palette size={16} strokeWidth={2} />
         </button>
         {model.kind === "task" && (
+          <button
+            type="button"
+            role="menuitem"
+            className={`nm-btn${panel === "status" || panel === "block" ? " is-on" : ""}`}
+            title="Статус: «Чужая», «Заблокировать…»"
+            aria-label="Статус"
+            aria-expanded={panel === "status" || panel === "block"}
+            onClick={() => setPanel((p) => (p === "status" || p === "block" ? null : "status"))}
+          >
+            <CircleDashed size={16} strokeWidth={2} />
+          </button>
+        )}
+        {model.kind === "task" && !sticker && (
           <button
             type="button"
             role="menuitem"

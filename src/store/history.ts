@@ -35,7 +35,7 @@ import {
   type RegionChange,
   type TaskStatus,
 } from "../api";
-import { useGraph } from "./graph";
+import { muteBlockToast, useGraph } from "./graph";
 import { useMode } from "./mode";
 
 /** Глубина истории на пространство. */
@@ -109,8 +109,11 @@ function record(step: Step) {
   if (s.undo.length > HISTORY_LIMIT) s.undo.splice(0, s.undo.length - HISTORY_LIMIT);
 }
 
-/** Несколько записанных шагов — один шаг истории. */
-export async function grouped<T>(label: string, fn: () => Promise<T>): Promise<T> {
+/**
+ * Несколько записанных шагов — один шаг истории. `relabel` — и единственный
+ * шаг подписать `label` (а не его собственной подписью).
+ */
+export async function grouped<T>(label: string, fn: () => Promise<T>, relabel = false): Promise<T> {
   if (group) return fn(); // уже внутри группы
   const steps: Step[] = [];
   group = steps;
@@ -118,12 +121,12 @@ export async function grouped<T>(label: string, fn: () => Promise<T>): Promise<T
     return await fn();
   } finally {
     group = null;
-    finishGroup(label, steps);
+    finishGroup(label, steps, relabel);
   }
 }
 
-function finishGroup(label: string, steps: Step[]) {
-  if (steps.length === 1) record(steps[0]);
+function finishGroup(label: string, steps: Step[], relabel = false) {
+  if (steps.length === 1) record(relabel ? { ...steps[0], label, key: undefined } : steps[0]);
   else if (steps.length > 1) {
     record({
       label,
@@ -156,6 +159,14 @@ export function groupSync(label: string, fn: () => void) {
     group = null;
     finishGroup(label, steps);
   }
+}
+
+/**
+ * Драг ноды закончился не перемещением, а приклейкой/отрывом стикера (ТЗ
+ * §4.12.7): запомненное начало драга больше не нужно.
+ */
+export function forgetOrigin(id: string) {
+  dragOrigin.delete(id);
 }
 
 /** Откуда начато перемещение ноды, которую двигают не мышью, а «за компанию» (подзадачи). */
@@ -281,6 +292,7 @@ function apply(dir: "undo" | "redo"): Promise<void> {
     }
     // Отложенные перемещения — в БД раньше отмены (иначе догонят и перепишут).
     graph().flushWrites();
+    muteBlockToast(true);
     try {
       await step[dir]();
       step.at = 0; // отменённый/повторённый шаг больше не склеивается
@@ -295,6 +307,7 @@ function apply(dir: "undo" | "redo"): Promise<void> {
       graph().showError(e);
     }
     await refreshOpen();
+    muteBlockToast(false);
   });
   running = run.catch(() => undefined);
   return run;
@@ -502,6 +515,51 @@ export function installHistory() {
         record(regionStep(t ? `${what} в «${t}»` : `${what} в задачу`, change));
       }
       return change;
+    },
+
+    blockTask: async (canvasId, taskId, reason) => {
+      const t = modelOf(canvasId, taskId)?.title;
+      const model = await orig.blockTask(canvasId, taskId, reason);
+      if (model) {
+        record(
+          presenceStep(`блокировка «${t || "без названия"}»`, [canvasId], [model.id], [], true, null),
+        );
+      }
+      return model;
+    },
+
+    stick: async (canvasId, id, target, pos, edgeId) => {
+      // Было: к какой задаче приклеена, где лежит; стрелка «блокирует» к новой цели.
+      const view = graph().canvases[canvasId];
+      const n = view?.nodes.find((x) => x.id === id);
+      const res = await orig.stick(canvasId, id, target, pos, edgeId);
+      if (!res || !n) return res;
+      const before = {
+        target: n.data.model.stickerOf ?? null,
+        pos: { x: n.position.x, y: n.position.y },
+        edgeId: target
+          ? (view?.edges.find((e) => e.source === id && e.target === target && e.className === "edge-blocks")?.id ??
+            null)
+          : null,
+      };
+      const after = {
+        target: res.node.stickerOf ?? null,
+        pos: { x: res.node.x, y: res.node.y },
+        edgeId: res.edge?.id ?? null,
+      };
+      const label = after.target
+        ? "приклеивание стикера"
+        : after.edgeId
+          ? "отрыв стикера"
+          : "снятие стикера";
+      record({
+        label,
+        canvasIds: [canvasId],
+        at: Date.now(),
+        undo: async () => void (await api.stick(id, before.target, before.pos, before.edgeId)),
+        redo: async () => void (await api.stick(id, after.target, after.pos, after.edgeId)),
+      });
+      return res;
     },
 
     deleteSpace: async (spaceId) => {

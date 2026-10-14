@@ -3,7 +3,8 @@ import { Trash2 } from "lucide-react";
 import type { TaskStatus } from "../api";
 import { StatusIcon, STATUS_META } from "./NodeParts";
 
-const STATUSES: TaskStatus[] = ["todo", "in_progress", "done"];
+/** «Чужая» — тоже групповым действием; «Заблокирована» — только блокировкой (ТЗ §4.12.7). */
+const STATUSES: TaskStatus[] = ["todo", "in_progress", "done", "foreign"];
 
 interface Props {
   /** Сколько нод выделено (≥ 2). */
@@ -17,7 +18,7 @@ interface Props {
 /**
  * Групповые действия (ТЗ §4.3, v1.2): плавающая панель внизу по центру, пока
  * на верхнем уровне выделено ≥ 2 нод. Статус — всем выделенным задачам
- * (заметки пропускаются), «Удалить» — одно подтверждение на всё.
+ * (заметки и заблокированные пропускаются), «Удалить» — одно подтверждение на всё.
  */
 export function BulkBar({ count, tasks, onStatus, onDelete }: Props) {
   return (

@@ -23,6 +23,8 @@ export type NodeData = {
   /** Рамка ничейного слоя / заглушка-якорь: id этого слоя и размер рамки. */
   layerId?: string;
   frame?: { w: number; h: number };
+  /** Картинка стикера (просвечивание, соседи, якорь): задача, к которой он приклеен. */
+  stickerHost?: string;
 };
 
 /**
@@ -47,17 +49,55 @@ export function progressMap(list: NodeProgress[]): Map<string, Progress> {
 }
 
 export function toFlowNode(m: NodeModel, progress?: Progress): FlowNode {
-  return {
+  const n: FlowNode = {
     id: m.id,
     type: m.kind,
     position: { x: m.x, y: m.y },
     data: progress ? { model: m, progress } : { model: m },
   };
+  // Стикер (ТЗ §4.12.7) — дочерняя нода React Flow своей задачи: x/y — смещение
+  // от её угла, едет вместе с ней.
+  if (m.stickerOf) {
+    n.parentId = m.stickerOf;
+    n.className = "is-sticker-node";
+  }
+  return n;
 }
+
+/** Стикеры — после своих задач (React Flow требует родителя раньше ребёнка). */
+export function parentsFirst(nodes: FlowNode[]): FlowNode[] {
+  if (!nodes.some((n) => n.parentId)) return nodes;
+  const ids = new Set(nodes.map((n) => n.id));
+  const out: FlowNode[] = [];
+  const kids: FlowNode[] = [];
+  for (const n of nodes) {
+    if (!n.parentId) out.push(n);
+    // Родителя нет среди нод (не должно случаться) — рисуем как есть, без привязки.
+    else if (!ids.has(n.parentId)) out.push({ ...n, parentId: undefined });
+    else kids.push(n);
+  }
+  return [...out, ...kids];
+}
+
+/** Цвет стрелки «блокирует» (ТЗ §4.12.7). */
+export const BLOCK_EDGE_COLOR = "#d0675f";
 
 export const EDGE_COLOR = "#7d8494";
 
 export function toFlowEdge(e: EdgeModel): FlowEdge {
+  if (e.kind === "blocks") {
+    return {
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle,
+      targetHandle: e.targetHandle,
+      type: "default",
+      className: "edge-blocks",
+      markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: BLOCK_EDGE_COLOR },
+      label: "блокирует",
+    };
+  }
   return {
     id: e.id,
     source: e.source,
@@ -75,7 +115,8 @@ export function progressOf(nodes: FlowNode[]): Progress | undefined {
   let total = 0;
   let done = 0;
   for (const n of nodes) {
-    if (n.data.model.kind !== "task") continue;
+    // Стикеры — пометки задачи, а не подзадачи (ТЗ §4.12.7).
+    if (n.data.model.kind !== "task" || n.data.model.stickerOf) continue;
     total++;
     if (n.data.model.status === "done") done++;
   }

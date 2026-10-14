@@ -40,11 +40,11 @@ import {
 } from "../layers/LayerNodes";
 import { viewportBus } from "../layers/viewportBus";
 import { useGraph, type CanvasView } from "../store/graph";
-import { grouped, groupSync, noteOrigin } from "../store/history";
+import { forgetOrigin, grouped, groupSync, noteOrigin } from "../store/history";
 import { useMode } from "../store/mode";
 import { BulkBar } from "./BulkBar";
 import { CanvasMenu } from "./CanvasMenu";
-import { EDGE_COLOR, isHandleSide, type FlowEdge, type FlowNode } from "./flow";
+import { EDGE_COLOR, isHandleSide, parentsFirst, type FlowEdge, type FlowNode } from "./flow";
 import { GhostEdge } from "./GhostEdge";
 import { CanvasHotkeys } from "./hotkeys";
 import { NodeMenu } from "./NodeMenu";
@@ -248,8 +248,10 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
   const clearNested = useGraph((s) => s.clearNested);
   const setHlRoot = useGraph((s) => s.setHlRoot);
   const placeNodes = useGraph((s) => s.placeNodes);
+  const blockTask = useGraph((s) => s.blockTask);
+  const stick = useGraph((s) => s.stick);
 
-  const { screenToFlowPosition, deleteElements, setViewport } = useReactFlow<FlowNode, FlowEdge>();
+  const { screenToFlowPosition, deleteElements, setViewport, getInternalNode } = useReactFlow<FlowNode, FlowEdge>();
   const rootRef = useRef<HTMLDivElement>(null);
   const downAt = useRef<{ x: number; y: number } | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
@@ -354,21 +356,29 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
   }, [mergedViews]);
 
   const nodes = useMemo(() => {
+    // Нода под якорем следующего слоя скрывается вместе со своими стикерами.
     let own =
       coveredNodeId && !active
-        ? view?.nodes.map((n) => (n.id === coveredNodeId ? { ...n, className: "is-covered" } : n))
+        ? view?.nodes.map((n) =>
+            n.id === coveredNodeId || n.parentId === coveredNodeId
+              ? { ...n, className: `${n.className ?? ""} is-covered` }
+              : n,
+          )
         : view?.nodes;
     let merged = mergedViews.length ? mergedViews.flatMap((v) => v.nodes) : [];
     let extra = extras.nodes;
     if (hlIds) {
-      const mark = (n: FlowNode) => (hlIds.has(n.id) ? { ...n, className: "is-hl" } : n);
+      const mark = (n: FlowNode) => (hlIds.has(n.id) ? { ...n, className: `${n.className ?? ""} is-hl` } : n);
       own = own?.map(mark);
       merged = merged.map(mark);
     }
+    // Стикеры (дочерние ноды React Flow) — после своих задач.
+    own = own && parentsFirst(own);
+    merged = parentsFirst(merged);
     // Подзадачи едут за перетаскиваемой задачей (ТЗ §4.12.2).
     if (followIds && followDelta) {
       const shift = (n: FlowNode) =>
-        followIds.has(n.id)
+        followIds.has(n.id) || (n.data.stickerHost && followIds.has(n.data.stickerHost))
           ? { ...n, position: { x: n.position.x + followDelta.x, y: n.position.y + followDelta.y } }
           : n;
       merged = merged.map(shift);
@@ -533,6 +543,65 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
     setNodeMenu(null);
     void deleteElements({ nodes: [{ id: menuNode.id }] });
   }, [deleteElements, menuNode]);
+
+  /** Подменю «Статус» (ТЗ §4.12.7): обычные статусы и «Чужая». */
+  const onNodeStatus = useCallback(
+    (status: TaskStatus) => {
+      if (!menuNode) return;
+      setNodeMenu(null);
+      const m = menuNode.data.model;
+      if (m.status !== status) void updateNode(m.canvasId, menuNode.id, { status });
+    },
+    [menuNode, updateNode],
+  );
+
+  /** «Заблокировать…»: причина → стикер «Чужая» на задаче. */
+  const onNodeBlock = useCallback(
+    (reason: string) => {
+      if (!menuNode) return;
+      setNodeMenu(null);
+      void blockTask(menuNode.data.model.canvasId, menuNode.id, reason);
+    },
+    [menuNode, blockTask],
+  );
+
+  /**
+   * «Разблокировать»: стрелки «блокирует» к задаче снимаются; стикеры — удалить
+   * или оторвать (спросить). Всё — одним шагом undo.
+   */
+  const onNodeUnblock = useCallback(async () => {
+    if (!menuNode) return;
+    setNodeMenu(null);
+    const m = menuNode.data.model;
+    const g = useGraph.getState();
+    const v = g.canvases[m.canvasId];
+    if (!v) return;
+    const stickers = v.nodes.filter((n) => n.data.model.stickerOf === m.id).map((n) => n.id);
+    const edgeIds = v.edges.filter((e) => e.target === m.id && e.className === "edge-blocks").map((e) => e.id);
+    let mode: "delete" | "detach" = "delete";
+    if (stickers.length) {
+      const choice = await useTreeDialogs.getState().askUnblock({ title: m.title, stickers: stickers.length });
+      if (!choice) return;
+      mode = choice;
+    }
+    // persistDelete ждёт, что из кэша элементы уже убраны (как после Delete).
+    const doomed = mode === "delete" ? stickers : [];
+    if (doomed.length) g.onNodesChange(m.canvasId, doomed.map((id) => ({ type: "remove" as const, id })));
+    if (edgeIds.length) g.onEdgesChange(m.canvasId, edgeIds.map((id) => ({ type: "remove" as const, id })));
+    await grouped(
+      `разблокировка «${m.title || "без названия"}»`,
+      async () => {
+        if (mode === "detach") {
+          for (const id of stickers) await stick(m.canvasId, id, null, null, null);
+          if (edgeIds.length) await persistDelete(m.canvasId, [], edgeIds);
+        } else {
+          await persistDelete(m.canvasId, stickers, edgeIds);
+        }
+      },
+      true,
+    );
+    await useGraph.getState().refreshCanvas(m.canvasId);
+  }, [menuNode, stick, persistDelete]);
 
   const onNodeSelectNested = useCallback(() => {
     if (!menuNode) return;
@@ -707,9 +776,61 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
     (_: unknown, __: FlowNode, dragged: FlowNode[]) => trackFollow(dragged),
     [trackFollow],
   );
+  /**
+   * Стикеры (ТЗ §4.12.7): стикер, утащенный за пределы своей задачи, отрывается
+   * (обычная нода + стрелка «блокирует»); «Чужая», брошенная на задачу того же
+   * холста, приклеивается к ней стикером. true — обработано (не перемещение).
+   */
+  const stickerDrop = useCallback(
+    (node: FlowNode, moved: FlowNode[]): boolean => {
+      if (moved.length !== 1 || follow.current || node.type !== "task") return false;
+      const m = node.data.model;
+      const cid = canvasOf(node.id);
+      const rect = (id: string) => {
+        const n = getInternalNode(id);
+        if (!n) return null;
+        const p = n.internals.positionAbsolute;
+        return { x: p.x, y: p.y, w: n.measured.width ?? 0, h: n.measured.height ?? 0 };
+      };
+      const me = rect(node.id);
+      if (!me) return false;
+      if (m.stickerOf) {
+        const host = rect(m.stickerOf);
+        if (!host) return false;
+        const overlap =
+          me.x < host.x + host.w && me.x + me.w > host.x && me.y < host.y + host.h && me.y + me.h > host.y;
+        if (overlap) return false; // остаётся стикером — просто сдвинули
+        forgetOrigin(node.id);
+        void stick(cid, node.id, null, { x: me.x, y: me.y }, crypto.randomUUID());
+        return true;
+      }
+      if (m.status !== "foreign") return false;
+      const cx = me.x + me.w / 2;
+      const cy = me.y + me.h / 2;
+      const target = (useGraph.getState().canvases[cid]?.nodes ?? []).find((t) => {
+        if (t.id === node.id || t.data.model.kind !== "task" || t.data.model.stickerOf) return false;
+        const r = rect(t.id);
+        return !!r && cx >= r.x && cx <= r.x + r.w && cy >= r.y && cy <= r.y + r.h;
+      });
+      if (!target) return false;
+      if (useGraph.getState().canvases[cid]?.nodes.some((n) => n.data.model.stickerOf === node.id)) return false;
+      forgetOrigin(node.id);
+      void stick(cid, node.id, target.id, null, null);
+      return true;
+    },
+    [canvasOf, getInternalNode, stick],
+  );
+
   const onNodeDragStop = useCallback(
-    (_: unknown, __: FlowNode, moved: FlowNode[]) => void savePositions(moved),
-    [savePositions],
+    (_: unknown, node: FlowNode, moved: FlowNode[]) => {
+      if (stickerDrop(node, moved)) {
+        setFollowIds(null);
+        setFollowDelta(null);
+        return;
+      }
+      void savePositions(moved);
+    },
+    [savePositions, stickerDrop],
   );
   const onSelectionDragStart = useCallback(
     (_: unknown, dragged: FlowNode[]) => {
@@ -1070,6 +1191,9 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
           onMoveTo={onNodeMoveTo}
           onDelete={onNodeDelete}
           onClose={closeNodeMenu}
+          onStatus={onNodeStatus}
+          onBlock={onNodeBlock}
+          onUnblock={() => void onNodeUnblock()}
         />
       )}
       {orphanMenu && (

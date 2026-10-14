@@ -1,12 +1,12 @@
 import { memo, useCallback } from "react";
 import type { NodeProps } from "@xyflow/react";
 
-import { useGraph, useStatusColors } from "../store/graph";
+import { NEXT_STATUS, useGraph, useStatusColors } from "../store/graph";
 import type { FlowNode } from "./flow";
 import { COMMENT_LINK, RESULT_LINK } from "./kbLink";
 import { KbLinkField } from "./KbLinkField";
 import { NodeHandles } from "./NodeHandles";
-import { ProgressBadge, StatusIcon, STATUS_META } from "./NodeParts";
+import { ProgressBadge, StatusIcon, StickerCard, STATUS_META } from "./NodeParts";
 import { NodeTitle } from "./NodeTitle";
 import { fillStyle, nodeFillColor } from "./palette";
 
@@ -27,6 +27,38 @@ function TaskNodeImpl({ data, selected }: NodeProps<FlowNode>) {
     [updateNode, m.canvasId, m.id],
   );
 
+  const cycles = !!NEXT_STATUS[status];
+  const marker = (
+    <button
+      type="button"
+      className={`status-marker nodrag${cycles ? "" : " is-fixed"}`}
+      title={cycles ? `${label} — нажмите, чтобы сменить` : `${label} — статус меняется через ПКМ`}
+      aria-label={`Статус: ${label}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        cycleStatus(m.canvasId, m.id);
+      }}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
+      <StatusIcon status={status} />
+    </button>
+  );
+
+  // Стикер (ТЗ §4.12.7): компактная карточка у угла своей задачи.
+  if (m.stickerOf) {
+    return (
+      <StickerCard
+        model={m}
+        fill={fillStyle(fill)}
+        className={selected ? "is-selected" : undefined}
+        title={<NodeTitle model={m} placeholder="Без названия" />}
+        marker={marker}
+      >
+        <NodeHandles />
+      </StickerCard>
+    );
+  }
+
   return (
     <div
       className={`g-node g-task status-${status}${selected ? " is-selected" : ""}${fill ? " is-filled" : ""}`}
@@ -40,19 +72,7 @@ function TaskNodeImpl({ data, selected }: NodeProps<FlowNode>) {
         <KbLinkField slot={RESULT_LINK} path={m.kbResultPath} title={m.title} onSet={setResult} />
       </div>
       <div className="node-foot">
-        <button
-          type="button"
-          className="status-marker nodrag"
-          title={`${label} — нажмите, чтобы сменить`}
-          aria-label={`Статус: ${label}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            cycleStatus(m.canvasId, m.id);
-          }}
-          onDoubleClick={(e) => e.stopPropagation()}
-        >
-          <StatusIcon status={status} />
-        </button>
+        {marker}
         <span className="status-label">{label}</span>
         <ProgressBadge
           progress={data.progress}

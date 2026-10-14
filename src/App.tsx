@@ -3,7 +3,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { LayerStack } from "./layers/LayerStack";
 import { TaskOverview } from "./overview/TaskOverview";
 import { HotkeyHelp } from "./canvas/hotkeys";
-import { DeleteParentDialog, MovePicker } from "./canvas/TreeDialogs";
+import { DeleteParentDialog, MovePicker, UnblockDialog } from "./canvas/TreeDialogs";
 import { GraphSearch, GraphSearchHotkey } from "./search/GraphSearch";
 import { useGraph } from "./store/graph";
 import { installHistory, useHistory } from "./store/history";
@@ -22,6 +22,7 @@ export default function App() {
   const fatal = useGraph((s) => s.fatal);
   const toast = useGraph((s) => s.toast);
   const dismissToast = useGraph((s) => s.dismissToast);
+  const toastKind = useGraph((s) => s.toastKind);
   const init = useGraph((s) => s.init);
   const mode = useMode((s) => s.mode);
   const kbMounted = useMode((s) => s.kbMounted);
@@ -77,11 +78,12 @@ export default function App() {
       )}
       <HotkeyHelp />
       <DeleteParentDialog />
+      <UnblockDialog />
       <MovePicker />
       <GraphSearch />
       <GraphSearchHotkey />
       {toast && (
-        <div className="toast" role="alert" onClick={dismissToast}>
+        <div className={toastKind === "info" ? "toast is-info" : "toast"} role="alert" onClick={dismissToast}>
           {toast}
         </div>
       )}

@@ -48,6 +48,8 @@ export const DEFAULT_STATUS_COLORS: StatusColors = {
   todo: null,
   in_progress: "blue",
   done: "green",
+  blocked: "red",
+  foreign: "orange",
 };
 
 /** Разбор `app_state.status_colors`; неизвестные ключи палитры — «нет», пропуски — по умолчанию. */

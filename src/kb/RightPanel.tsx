@@ -3,9 +3,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { syntaxTree } from "@codemirror/language";
-import { Circle, CircleCheck, CircleDot, Link2, ListTree, Network, StickyNote } from "lucide-react";
+import { Circle, CircleCheck, CircleDot, CircleSlash, CircleUserRound, Link2, ListTree, Network, StickyNote } from "lucide-react";
 
-import { api, type Backlink, type LinkRole, type LinkedNode } from "../api";
+import { api, type Backlink, type LinkRole, type LinkedNode, type TaskStatus } from "../api";
 import { revealGraphNode, useMode } from "../store/mode";
 import { ancestors, isImage, noteName, parentDir } from "./paths";
 import { docs, useDocMeta, useKb, type RightView } from "./store";
@@ -159,10 +159,12 @@ function Outline({ tabId }: { tabId: string }) {
   );
 }
 
-const STATUS_ICON = {
+const STATUS_ICON: Record<TaskStatus, React.ReactNode> = {
   todo: <Circle size={13} />,
   in_progress: <CircleDot size={13} />,
   done: <CircleCheck size={13} />,
+  blocked: <CircleSlash size={13} />,
+  foreign: <CircleUserRound size={13} />,
 };
 
 /** Роль ссылки в строке «Нод графа» (ТЗ §4.11); у ноды-заметки — без подписи. */

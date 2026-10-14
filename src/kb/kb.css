@@ -1330,3 +1330,13 @@ img.rd-img.is-broken {
   cursor: pointer;
   transform: translate(-50%, 0);
 }
+
+/* M7c: статусы «Заблокирована» и «Чужая» (ТЗ §4.12.7) */
+.kb-result-marker.status-blocked,
+.kb-graph-node.status-blocked .kb-graph-node-icon {
+  color: #e0706a;
+}
+.kb-result-marker.status-foreign,
+.kb-graph-node.status-foreign .kb-graph-node-icon {
+  color: #e39a5a;
+}

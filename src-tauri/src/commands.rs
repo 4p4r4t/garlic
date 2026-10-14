@@ -217,17 +217,12 @@ pub async fn stick(
     db: Cmd<'_>,
     id: String,
     target: Option<String>,
-    pos: Option<NodePosition>,
+    x: Option<f64>,
+    y: Option<f64>,
     edge_id: Option<String>,
 ) -> AppResult<crate::model::StickResult> {
     let conn = db.conn()?;
-    let r = repo::blocks::stick(
-        &conn,
-        &id,
-        target.as_deref(),
-        pos.map(|p| (p.x, p.y)),
-        edge_id,
-    )?;
+    let r = repo::blocks::stick(&conn, &id, target.as_deref(), x.zip(y), edge_id)?;
     synced(&app, &conn)?;
     Ok(r)
 }

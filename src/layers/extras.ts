@@ -68,10 +68,21 @@ export function stubModel(id: string, canvasId: string): NodeModel {
     kbResultPath: null,
     createdAt: 0,
     updatedAt: 0,
+    prevStatus: null,
+    stickerOf: null,
   };
 }
 
 type Sized = { id: string; x: number; y: number };
+
+/**
+ * Мировое положение ноды для картинок вне её холста: у стикера (ТЗ §4.12.7)
+ * x/y — смещение от его задачи, лежащей на том же холсте.
+ */
+export function worldPos(m: NodeModel, byId: Map<string, NodeModel>): { x: number; y: number } {
+  const host = m.stickerOf ? byId.get(m.stickerOf) : undefined;
+  return host ? { x: host.x + m.x, y: host.y + m.y } : { x: m.x, y: m.y };
+}
 
 /** Прямоугольник, охватывающий ноды (по их измеренным размерам или размеру по умолчанию). */
 export function boundsOf(
@@ -140,6 +151,7 @@ export function useLayerExtras(
       : undefined,
   );
   const ownNodes = useGraph((s) => s.canvases[canvasId]?.nodes);
+  const parentNodes = useGraph((s) => (parentCanvasId && ownerId ? s.canvases[parentCanvasId]?.nodes : undefined));
   const subtree = useGraph((s) =>
     active && s.subtree?.canvasId === canvasId ? s.subtree : null,
   );
@@ -173,6 +185,29 @@ export function useLayerExtras(
       measured: measured.get(ownerNode.id) ?? ownerNode.measured,
     };
   }, [ownerNode, done, total, active, measured]);
+
+  // Стикеры ноды-родителя — картинкой рядом с якорем (ТЗ §4.12.7); клик — как по якорю.
+  const anchorStickers = useMemo<FlowNode[]>(() => {
+    if (!ownerNode || !parentNodes) return EMPTY;
+    const list = parentNodes.filter((n) => n.data.model.stickerOf === ownerNode.id);
+    if (!list.length) return EMPTY;
+    return list.map((n) => ({
+      id: n.id,
+      type: "anchor",
+      position: {
+        x: ownerNode.position.x + n.position.x,
+        y: ownerNode.position.y + n.position.y,
+      },
+      data: { model: n.data.model, stickerHost: ownerNode.id },
+      draggable: false,
+      selectable: false,
+      deletable: false,
+      focusable: false,
+      connectable: false,
+      zIndex: 2,
+      measured: measured.get(n.id) ?? n.measured,
+    }));
+  }, [ownerNode, parentNodes, measured]);
 
   // Ничейный слой: заглушка «Без родителя» над его нодами (ТЗ §4.12.3).
   const orphanBounds = useMemo(() => {
@@ -215,11 +250,12 @@ export function useLayerExtras(
     for (const l of subtree.levels) {
       const d = l.depth;
       const prog = progressMap(l.progress);
+      const byId = new Map(l.nodes.map((m) => [m.id, m]));
       const cls = `ghost-d${Math.min(d, GHOST_OPACITY.length)}`;
       if (!l.canvas.ownerNode) {
         const frame = orphanFrame(
           l.canvas.id,
-          l.nodes,
+          l.nodes.filter((m) => !m.stickerOf),
           (id) => measured.get(id),
           ghostNodeZ(d) - 1,
           cls,
@@ -230,19 +266,20 @@ export function useLayerExtras(
         nodes.push({
           id: m.id,
           type: "ghost",
-          position: { x: m.x, y: m.y },
+          position: worldPos(m, byId),
           data: {
             model: m,
             depth: d,
             path: [...l.path, m.title || (m.kind === "task" ? "Без названия" : "Заметка")],
             progress: prog.get(m.id),
+            stickerHost: m.stickerOf ?? undefined,
           },
           draggable: false,
           selectable: false,
           deletable: false,
           connectable: false,
           focusable: false,
-          zIndex: ghostNodeZ(d),
+          zIndex: ghostNodeZ(d) + (m.stickerOf ? 1 : 0),
           className: cls,
           measured: measured.get(m.id),
         });
@@ -278,18 +315,25 @@ export function useLayerExtras(
     for (const l of neighbors.levels) {
       const prog = progressMap(l.progress);
       const present = new Set(l.nodes.map((m) => m.id));
+      const byId = new Map(l.nodes.map((m) => [m.id, m]));
       for (const m of l.nodes) {
         nodes.push({
           id: m.id,
           type: "neighbor",
-          position: { x: m.x, y: m.y },
-          data: { model: m, parentTitle: l.parentTitle, chain: l.canvasChain, progress: prog.get(m.id) },
+          position: worldPos(m, byId),
+          data: {
+            model: m,
+            parentTitle: l.parentTitle,
+            chain: l.canvasChain,
+            progress: prog.get(m.id),
+            stickerHost: m.stickerOf ?? undefined,
+          },
           draggable: false,
           selectable: false,
           deletable: false,
           connectable: false,
           focusable: false,
-          zIndex: NEIGHBOR_NODE_Z,
+          zIndex: NEIGHBOR_NODE_Z + (m.stickerOf ? 1 : 0),
           className: "is-neighbor",
           measured: measured.get(m.id),
         });
@@ -312,7 +356,7 @@ export function useLayerExtras(
   }, [neighbors, measured]);
 
   return useMemo(() => {
-    const head = [anchor, orphanAnchor].filter((n): n is FlowNode => !!n);
+    const head = [anchor, ...anchorStickers, orphanAnchor].filter((n): n is FlowNode => !!n);
     const nodes = [...head, ...near.nodes, ...ghostNodes];
     const edges = near.edges.length ? [...near.edges, ...ghosts.edges] : ghosts.edges;
     return {
@@ -320,8 +364,8 @@ export function useLayerExtras(
       edges: edges.length ? edges : EMPTY_EDGES,
       ids: new Set(nodes.map((n) => n.id)),
       edgeIds: new Set(edges.map((e) => e.id)),
-      ghostIds: new Set(nodes.filter((n) => n.type !== "anchor").map((n) => n.id)),
+      ghostIds: new Set(nodes.filter((n) => n.type !== "anchor" || n.data.stickerHost).map((n) => n.id)),
       measured,
     };
-  }, [anchor, orphanAnchor, near, ghostNodes, ghosts.edges, measured]);
+  }, [anchor, anchorStickers, orphanAnchor, near, ghostNodes, ghosts.edges, measured]);
 }
