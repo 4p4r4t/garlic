@@ -180,6 +180,44 @@ function pointOf(event: MouseEvent | TouchEvent): { x: number; y: number } | nul
 
 const isReal = (n: FlowNode) => n.type === "task" || n.type === "note";
 
+/**
+ * Стрелка «блокирует» (ТЗ §4.12.7) хранится без хэндлов — стороны выбираются
+ * по взаимному положению нод (иначе React Flow берёт первый хэндл — верх).
+ */
+function withBlockHandles(edges: FlowEdge[], nodes: FlowNode[]): FlowEdge[] {
+  if (!edges.some((e) => e.className === "edge-blocks" && !e.sourceHandle)) return edges;
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const center = (n: FlowNode) => {
+    let x = n.position.x;
+    let y = n.position.y;
+    const p = n.parentId ? byId.get(n.parentId) : undefined;
+    if (p) {
+      x += p.position.x;
+      y += p.position.y;
+    }
+    return { x: x + (n.measured?.width ?? 240) / 2, y: y + (n.measured?.height ?? 112) / 2 };
+  };
+  return edges.map((e) => {
+    if (e.className !== "edge-blocks" || e.sourceHandle) return e;
+    const s = byId.get(e.source);
+    const t = byId.get(e.target);
+    if (!s || !t) return e;
+    const a = center(s);
+    const b = center(t);
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const [sh, th] =
+      Math.abs(dx) * 0.6 >= Math.abs(dy)
+        ? dx >= 0
+          ? ["right", "left"]
+          : ["left", "right"]
+        : dy >= 0
+          ? ["bottom", "top"]
+          : ["top", "bottom"];
+    return { ...e, sourceHandle: sh, targetHandle: th };
+  });
+}
+
 /** Ноды по холстам: { canvasId → items }. */
 function byCanvas<T>(items: T[], canvasOf: (t: T) => string): Map<string, T[]> {
   const out = new Map<string, T[]>();
@@ -264,6 +302,8 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
   /** Shift/Alt зажат — драг по пустому месту рисует рамку выделения (ТЗ §4.3, §4.12.2). */
   const selectKey = useKeyPress(SELECTION_KEYS);
   const follow = useRef<Follow | null>(null);
+  /** Где была нода в начале драга (undo приклейки/отрыва стикера). */
+  const dragStart = useRef<{ id: string; x: number; y: number } | null>(null);
   const [followIds, setFollowIds] = useState<Set<string> | null>(null);
   const [followDelta, setFollowDelta] = useState<XYPosition | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
@@ -390,9 +430,12 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
 
   const edges = useMemo(() => {
     const merged = mergedViews.length ? mergedViews.flatMap((v) => v.edges) : [];
-    if (!extras.edges.length && !merged.length) return view?.edges ?? [];
-    return [...extras.edges, ...merged, ...(view?.edges ?? [])];
-  }, [view, extras.edges, mergedViews]);
+    const all =
+      !extras.edges.length && !merged.length
+        ? (view?.edges ?? [])
+        : [...extras.edges, ...merged, ...(view?.edges ?? [])];
+    return withBlockHandles(all, nodes);
+  }, [view, extras.edges, mergedViews, nodes]);
 
   const onNodesChange = useCallback(
     (changes: NodeChange<FlowNode>[]) => {
@@ -592,7 +635,14 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
       `разблокировка «${m.title || "без названия"}»`,
       async () => {
         if (mode === "detach") {
-          for (const id of stickers) await stick(m.canvasId, id, null, null, null);
+          // Оторванные — обычные задачи справа от задачи, столбиком.
+          const host = v.nodes.find((n) => n.id === m.id);
+          const hx = host?.position.x ?? m.x;
+          const hy = host?.position.y ?? m.y;
+          const hw = host?.measured?.width ?? 240;
+          for (const [i, id] of stickers.entries()) {
+            await stick(m.canvasId, id, null, { x: hx + hw + 60, y: hy + i * 140 }, null);
+          }
           if (edgeIds.length) await persistDelete(m.canvasId, [], edgeIds);
         } else {
           await persistDelete(m.canvasId, stickers, edgeIds);
@@ -768,6 +818,7 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
   const onNodeDragStart = useCallback(
     (_: unknown, node: FlowNode, dragged: FlowNode[]) => {
       closeMenus();
+      dragStart.current = { id: node.id, x: node.position.x, y: node.position.y };
       beginFollow(node, dragged);
     },
     [closeMenus, beginFollow],
@@ -794,6 +845,8 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
       };
       const me = rect(node.id);
       if (!me) return false;
+      const startOf = (id: string) =>
+        dragStart.current?.id === id ? { x: dragStart.current.x, y: dragStart.current.y } : undefined;
       if (m.stickerOf) {
         const host = rect(m.stickerOf);
         if (!host) return false;
@@ -801,7 +854,7 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
           me.x < host.x + host.w && me.x + me.w > host.x && me.y < host.y + host.h && me.y + me.h > host.y;
         if (overlap) return false; // остаётся стикером — просто сдвинули
         forgetOrigin(node.id);
-        void stick(cid, node.id, null, { x: me.x, y: me.y }, crypto.randomUUID());
+        void stick(cid, node.id, null, { x: me.x, y: me.y }, crypto.randomUUID(), startOf(node.id));
         return true;
       }
       if (m.status !== "foreign") return false;
@@ -815,7 +868,7 @@ export function FlowCanvas({ canvasId, level, active, parentCanvasId, coveredNod
       if (!target) return false;
       if (useGraph.getState().canvases[cid]?.nodes.some((n) => n.data.model.stickerOf === node.id)) return false;
       forgetOrigin(node.id);
-      void stick(cid, node.id, target.id, null, null);
+      void stick(cid, node.id, target.id, null, null, startOf(node.id));
       return true;
     },
     [canvasOf, getInternalNode, stick],

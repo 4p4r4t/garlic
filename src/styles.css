@@ -2242,6 +2242,7 @@ button.kb-link.is-path.is-note:hover {
 .qp-block.ov-st-done .qp-text {
   text-decoration: line-through;
   text-decoration-color: rgba(255, 255, 255, 0.4);
+}
 
 /* M6c: поле ввода в настройках (папка вложений) */
 .st-input {

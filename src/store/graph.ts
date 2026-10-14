@@ -204,6 +204,8 @@ interface GraphState {
     target: string | null,
     pos: { x: number; y: number } | null,
     edgeId: string | null,
+    /** Где нода была до драга (для undo); нет — текущее положение в кэше. */
+    prevPos?: { x: number; y: number },
   ) => Promise<StickResult | null>;
   /** Итог пересчёта блокировок из Rust: статусы в кэш, тост «Разблокировано: …». */
   applyBlockSync: (sync: BlockSync) => void;

@@ -21,14 +21,16 @@ use crate::model::{BlockSync, Edge, EdgeKind, Node, NodeKind, StickResult, TaskS
 /// Ширина ноды задачи (ТЗ §4.3) и стикера — для места стикера у правого верхнего угла.
 const TASK_W: f64 = 240.0;
 const STICKER_W: f64 = 150.0;
-/// Сдвиг каждого следующего стикера влево.
-const STICKER_STEP: f64 = 132.0;
+/// Каждый следующий стикер — выше и чуть левее (стопка над углом, заголовок
+/// задачи не закрывается).
+const STICKER_STEP_X: f64 = 18.0;
+const STICKER_STEP_Y: f64 = 46.0;
 
 /// Место `k`-го стикера задачи (смещение от её левого верхнего угла): первый —
-/// за правым верхним углом, следующие — левее, чуть вразнобой по высоте.
+/// на правом верхнем углу, следующие — стопкой вверх.
 pub fn sticker_slot(k: usize) -> (f64, f64) {
-    let x = TASK_W - STICKER_W + 16.0 - STICKER_STEP * k as f64;
-    let y = if k.is_multiple_of(2) { -26.0 } else { -20.0 };
+    let x = TASK_W - STICKER_W + 36.0 - STICKER_STEP_X * k as f64;
+    let y = -32.0 - STICKER_STEP_Y * k as f64;
     (x, y)
 }
 

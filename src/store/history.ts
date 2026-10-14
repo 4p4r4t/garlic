@@ -528,7 +528,7 @@ export function installHistory() {
       return model;
     },
 
-    stick: async (canvasId, id, target, pos, edgeId) => {
+    stick: async (canvasId, id, target, pos, edgeId, prevPos) => {
       // Было: к какой задаче приклеена, где лежит; стрелка «блокирует» к новой цели.
       const view = graph().canvases[canvasId];
       const n = view?.nodes.find((x) => x.id === id);
@@ -536,7 +536,7 @@ export function installHistory() {
       if (!res || !n) return res;
       const before = {
         target: n.data.model.stickerOf ?? null,
-        pos: { x: n.position.x, y: n.position.y },
+        pos: prevPos ?? { x: n.position.x, y: n.position.y },
         edgeId: target
           ? (view?.edges.find((e) => e.source === id && e.target === target && e.className === "edge-blocks")?.id ??
             null)
