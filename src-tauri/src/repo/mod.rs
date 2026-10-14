@@ -2,6 +2,7 @@
 //! Функции принимают `&Connection`; многошаговые операции идут в транзакции.
 
 pub mod app_state;
+pub mod blocks;
 pub mod canvases;
 pub mod edges;
 pub mod history;

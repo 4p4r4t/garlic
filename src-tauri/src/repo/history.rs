@@ -8,7 +8,7 @@ use rusqlite::{params, Connection};
 
 use super::{canvases, edges, nodes};
 use crate::error::{AppError, AppResult};
-use crate::model::{GraphSnapshot, HandleSide, TaskStatus};
+use crate::model::GraphSnapshot;
 
 /// Снимок нод `node_ids` (неизвестные id пропускаются) со всеми их вложенными
 /// холстами на всех уровнях, нодами и связями этих холстов, связями, где хотя
@@ -72,6 +72,27 @@ pub fn snapshot(
             }
         }
         frontier = next;
+    }
+
+    // Стикеры (ТЗ §4.12.7) уходят вместе со своей задачей (каскад) — значит, и в снимок.
+    {
+        let mut stickers = conn.prepare(&format!(
+            "SELECT {} FROM nodes WHERE sticker_of = ?1 ORDER BY created_at, id",
+            nodes::COLS
+        ))?;
+        let mut i = 0;
+        while i < snap.nodes.len() {
+            let id = snap.nodes[i].id.clone();
+            let found: Vec<_> = stickers
+                .query_map([&id], nodes::from_row)?
+                .collect::<Result<_, _>>()?;
+            for n in found {
+                if node_set.insert(n.id.clone()) {
+                    snap.nodes.push(n);
+                }
+            }
+            i += 1;
+        }
     }
 
     let mut edge_set: HashSet<String> = HashSet::new();
@@ -165,29 +186,7 @@ pub fn restore(conn: &Connection, snap: &GraphSnapshot) -> AppResult<usize> {
         )?;
     }
     for n in &snap.nodes {
-        tx.execute(
-            &format!(
-                "INSERT INTO nodes ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-                nodes::COLS
-            ),
-            params![
-                n.id,
-                n.canvas_id,
-                n.kind.as_str(),
-                n.title,
-                n.body,
-                n.status.map(TaskStatus::as_str),
-                n.color,
-                n.x,
-                n.y,
-                n.width,
-                n.height,
-                n.created_at,
-                n.updated_at,
-                n.kb_path,
-                n.kb_result_path
-            ],
-        )?;
+        nodes::insert_full(&tx, n)?;
     }
     for e in &snap.edges {
         let ok: bool = tx.query_row(
@@ -195,28 +194,14 @@ pub fn restore(conn: &Connection, snap: &GraphSnapshot) -> AppResult<usize> {
                 AND EXISTS(SELECT 1 FROM nodes WHERE id = ?2)
                 AND EXISTS(SELECT 1 FROM nodes WHERE id = ?3)
                 AND NOT EXISTS(SELECT 1 FROM edges WHERE id = ?4
-                               OR (canvas_id = ?1 AND source = ?2 AND target = ?3))",
-            params![e.canvas_id, e.source, e.target, e.id],
+                               OR (canvas_id = ?1 AND source = ?2 AND target = ?3 AND kind = ?5))",
+            params![e.canvas_id, e.source, e.target, e.id, e.kind.as_str()],
             |r| r.get(0),
         )?;
         if !ok {
             continue;
         }
-        tx.execute(
-            &format!(
-                "INSERT INTO edges ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                edges::COLS
-            ),
-            params![
-                e.id,
-                e.canvas_id,
-                e.source,
-                e.target,
-                e.source_handle.map(HandleSide::as_str),
-                e.target_handle.map(HandleSide::as_str),
-                e.label
-            ],
-        )?;
+        edges::insert_full(&tx, e)?;
     }
     tx.commit()?;
     Ok(snap.nodes.len())

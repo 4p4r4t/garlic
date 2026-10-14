@@ -13,7 +13,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use super::{canvases, edges, new_id, nodes};
 use crate::error::{AppError, AppResult};
-use crate::model::{DeleteMode, HandleSide, NodeKind, RegionChange, RegionSnapshot, TaskStatus};
+use crate::model::{DeleteMode, NodeKind, RegionChange, RegionSnapshot};
 
 /// Снимок области: холсты `region` (несуществующие — только в списке
 /// `region`), их ноды и связи.
@@ -102,29 +102,7 @@ pub fn apply_region(conn: &Connection, snap: &RegionSnapshot) -> AppResult<()> {
                 params![n.id, n.canvas_id],
             )?;
         } else {
-            tx.execute(
-                &format!(
-                    "INSERT INTO nodes ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-                    nodes::COLS
-                ),
-                params![
-                    n.id,
-                    n.canvas_id,
-                    n.kind.as_str(),
-                    n.title,
-                    n.body,
-                    n.status.map(TaskStatus::as_str),
-                    n.color,
-                    n.x,
-                    n.y,
-                    n.width,
-                    n.height,
-                    n.created_at,
-                    n.updated_at,
-                    n.kb_path,
-                    n.kb_result_path
-                ],
-            )?;
+            nodes::insert_full(&tx, n)?;
         }
     }
 
@@ -176,28 +154,14 @@ pub fn apply_region(conn: &Connection, snap: &RegionSnapshot) -> AppResult<()> {
             "SELECT EXISTS(SELECT 1 FROM nodes WHERE id = ?2)
                 AND EXISTS(SELECT 1 FROM nodes WHERE id = ?3)
                 AND NOT EXISTS(SELECT 1 FROM edges
-                               WHERE canvas_id = ?1 AND source = ?2 AND target = ?3)",
-            params![e.canvas_id, e.source, e.target],
+                               WHERE canvas_id = ?1 AND source = ?2 AND target = ?3 AND kind = ?4)",
+            params![e.canvas_id, e.source, e.target, e.kind.as_str()],
             |r| r.get(0),
         )?;
         if !ok {
             continue;
         }
-        tx.execute(
-            &format!(
-                "INSERT INTO edges ({}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                edges::COLS
-            ),
-            params![
-                e.id,
-                e.canvas_id,
-                e.source,
-                e.target,
-                e.source_handle.map(HandleSide::as_str),
-                e.target_handle.map(HandleSide::as_str),
-                e.label
-            ],
-        )?;
+        edges::insert_full(&tx, e)?;
     }
 
     // 5. Холсты области, которых нет в снимке.
@@ -378,6 +342,31 @@ pub fn move_into_task(conn: &Connection, ids: &[String], target: &str) -> AppRes
     }
     if moved.is_empty() {
         return Err(AppError::Invalid("нечего переносить".into()));
+    }
+    // Стикеры (ТЗ §4.12.7) едут со своей задачей; отдельно стикер не переносится.
+    {
+        let mut stmt = tx.prepare("SELECT id FROM nodes WHERE sticker_of = ?1 ORDER BY id")?;
+        let mut i = 0;
+        while i < moved.len() {
+            let found: Vec<String> = stmt
+                .query_map([&moved[i]], |r| r.get(0))?
+                .collect::<Result<_, _>>()?;
+            for s in found {
+                if !moved.contains(&s) {
+                    moved.push(s);
+                }
+            }
+            i += 1;
+        }
+    }
+    for id in &moved {
+        if let Some(h) = nodes::get(&tx, id)?.sticker_of {
+            if !moved.contains(&h) {
+                return Err(AppError::Invalid(
+                    "стикер переносится только вместе со своей задачей".into(),
+                ));
+            }
+        }
     }
     let owners = ancestor_owners(&tx, &target_node.canvas_id)?;
     if owners.iter().any(|o| moved.contains(o)) {

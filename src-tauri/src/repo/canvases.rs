@@ -64,7 +64,7 @@ pub fn progress(conn: &Connection, id: &str) -> AppResult<Vec<NodeProgress>> {
                 COUNT(n.id)
          FROM nodes o
          JOIN canvases c ON c.owner_node = o.id
-         JOIN nodes n ON n.canvas_id = c.id AND n.kind = 'task'
+         JOIN nodes n ON n.canvas_id = c.id AND n.kind = 'task' AND n.sticker_of IS NULL
          WHERE o.canvas_id = ?1
          GROUP BY o.id
          ORDER BY o.id",

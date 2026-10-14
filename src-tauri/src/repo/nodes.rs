@@ -11,7 +11,7 @@ pub const PALETTE: &[&str] = &[
 
 pub(crate) const COLS: &str =
     "id, canvas_id, kind, title, body, status, color, x, y, width, height,
-                    created_at, updated_at, kb_path, kb_result_path";
+                    created_at, updated_at, kb_path, kb_result_path, prev_status, sticker_of";
 
 pub(crate) fn from_row(r: &Row<'_>) -> rusqlite::Result<Node> {
     Ok(Node {
@@ -33,7 +33,41 @@ pub(crate) fn from_row(r: &Row<'_>) -> rusqlite::Result<Node> {
         kb_result_path: r.get(14)?,
         created_at: r.get(11)?,
         updated_at: r.get(12)?,
+        prev_status: r
+            .get::<_, Option<String>>(15)?
+            .map(|s| parse_col(15, s))
+            .transpose()?,
+        sticker_of: r.get(16)?,
     })
+}
+
+/// Значения колонок `COLS` ноды — для вставки «как было» (undo, перестройки).
+pub(crate) fn insert_full(conn: &Connection, n: &Node) -> AppResult<()> {
+    conn.execute(
+        &format!(
+            "INSERT INTO nodes ({COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)"
+        ),
+        params![
+            n.id,
+            n.canvas_id,
+            n.kind.as_str(),
+            n.title,
+            n.body,
+            n.status.map(TaskStatus::as_str),
+            n.color,
+            n.x,
+            n.y,
+            n.width,
+            n.height,
+            n.created_at,
+            n.updated_at,
+            n.kb_path,
+            n.kb_result_path,
+            n.prev_status.map(TaskStatus::as_str),
+            n.sticker_of
+        ],
+    )?;
+    Ok(())
 }
 
 pub fn find(conn: &Connection, id: &str) -> AppResult<Option<Node>> {
@@ -97,6 +131,18 @@ pub fn update(conn: &Connection, id: &str, patch: &NodePatch) -> AppResult<Node>
         node.body.clone_from(body);
     }
     if let Some(status) = patch.status {
+        if node.status != status {
+            if status.is_some_and(TaskStatus::is_blocked) {
+                return Err(AppError::Invalid(
+                    "«Заблокирована» ставится только блокировкой (ПКМ → «Заблокировать…»)".into(),
+                ));
+            }
+            if node.status.is_some_and(TaskStatus::is_blocked) {
+                return Err(AppError::Invalid(
+                    "задача заблокирована — сначала разблокируйте её".into(),
+                ));
+            }
+        }
         match (node.kind, status) {
             (NodeKind::Task, Some(_)) => node.status = status,
             (NodeKind::Task, None) => {
@@ -173,19 +219,26 @@ pub fn update(conn: &Connection, id: &str, patch: &NodePatch) -> AppResult<Node>
     Ok(node)
 }
 
-/// Пакетная смена статуса (групповые действия, ТЗ §4.3). Заметки и неизвестные
-/// id пропускаются. Возвращает обновлённые задачи (в порядке `ids`).
+/// Пакетная смена статуса (групповые действия, ТЗ §4.3). Заметки,
+/// заблокированные задачи и неизвестные id пропускаются. Возвращает
+/// обновлённые задачи (в порядке `ids`). «Заблокирована» так не ставится.
 pub fn set_status_many(
     conn: &Connection,
     ids: &[String],
     status: TaskStatus,
 ) -> AppResult<Vec<Node>> {
+    if status.is_blocked() {
+        return Err(AppError::Invalid(
+            "«Заблокирована» ставится только блокировкой".into(),
+        ));
+    }
     let tx = conn.unchecked_transaction()?;
     let mut updated = Vec::new();
     {
         let now = now_ms();
         let mut stmt = tx.prepare(
-            "UPDATE nodes SET status = ?2, updated_at = ?3 WHERE id = ?1 AND kind = 'task'",
+            "UPDATE nodes SET status = ?2, updated_at = ?3
+             WHERE id = ?1 AND kind = 'task' AND status IS NOT 'blocked'",
         )?;
         for id in ids {
             if stmt.execute(params![id, status.as_str(), now])? > 0 {
@@ -241,10 +294,12 @@ const SUB_CANVASES: &str = "WITH RECURSIVE sub(canvas_id) AS (
 
 /// Все вложенные ноды задач `ids` (все уровни) с положением — для перемещения
 /// задачи вместе с подзадачами (ТЗ §4.12.2). Сами `ids` не входят; повторы убраны.
+/// Стикеры не входят: их `x`/`y` — смещение от своей задачи, они едут с ней.
 pub fn descendants(conn: &Connection, ids: &[String]) -> AppResult<Vec<NodePlace>> {
     let mut stmt = conn.prepare(&format!(
         "{SUB_CANVASES} SELECT id, canvas_id, x, y FROM nodes
-          WHERE canvas_id IN (SELECT canvas_id FROM sub) ORDER BY created_at, id"
+          WHERE canvas_id IN (SELECT canvas_id FROM sub) AND sticker_of IS NULL
+          ORDER BY created_at, id"
     ))?;
     let roots: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
     let mut seen = std::collections::HashSet::new();

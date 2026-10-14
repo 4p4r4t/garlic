@@ -40,6 +40,8 @@ fn edge(conn: &Connection, canvas: &str, s: &str, t: &str) -> String {
             target: t.into(),
             source_handle: Some(HandleSide::Right),
             target_handle: None,
+            kind: Default::default(),
+            id: None,
         },
     )
     .expect("create edge")

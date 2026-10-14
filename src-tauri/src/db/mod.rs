@@ -8,7 +8,7 @@ use rusqlite::Connection;
 
 use crate::error::AppResult;
 
-pub use migrations::MIGRATIONS;
+pub use migrations::{FK_OFF, MIGRATIONS};
 
 /// Открывает (или создаёт) файл БД, настраивает прагмы и применяет миграции.
 pub fn open(path: &Path) -> AppResult<Connection> {
@@ -43,10 +43,33 @@ pub fn schema_version(conn: &Connection) -> AppResult<u32> {
 pub fn migrate(conn: &mut Connection) -> AppResult<()> {
     let current = schema_version(conn)? as usize;
     for (idx, sql) in MIGRATIONS.iter().enumerate().skip(current) {
-        let tx = conn.transaction()?;
-        tx.execute_batch(sql)?;
-        tx.pragma_update(None, "user_version", (idx + 1) as u32)?;
-        tx.commit()?;
+        let version = idx + 1;
+        let rebuild = FK_OFF.contains(&version);
+        if rebuild {
+            conn.pragma_update(None, "foreign_keys", "OFF")?;
+        }
+        let res = (|| -> AppResult<()> {
+            let tx = conn.transaction()?;
+            tx.execute_batch(sql)?;
+            if rebuild {
+                let broken: i64 =
+                    tx.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| {
+                        r.get(0)
+                    })?;
+                if broken > 0 {
+                    return Err(crate::error::AppError::Other(format!(
+                        "миграция v{version}: нарушены внешние ключи ({broken})"
+                    )));
+                }
+            }
+            tx.pragma_update(None, "user_version", version as u32)?;
+            tx.commit()?;
+            Ok(())
+        })();
+        if rebuild {
+            conn.pragma_update(None, "foreign_keys", "ON")?;
+        }
+        res?;
     }
     Ok(())
 }

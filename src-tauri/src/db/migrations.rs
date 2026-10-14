@@ -93,4 +93,53 @@ END;
 ALTER TABLE canvases ADD COLUMN host_canvas TEXT REFERENCES canvases(id) ON DELETE CASCADE;
 CREATE INDEX idx_canvases_host ON canvases(host_canvas) WHERE host_canvas IS NOT NULL;
 "#,
+    // v6 — статусы «Заблокирована» и «Чужая», стикеры (ТЗ §4.12.7, §6 v1.5).
+    // CHECK статуса в SQLite меняется только пересборкой таблицы: `nodes`
+    // пересоздаётся с теми же колонками (+ `prev_status`, `sticker_of`), данные
+    // копируются, индексы и триггер возвращаются. Выполняется с выключенными
+    // внешними ключами (см. `FK_OFF`), после — `foreign_key_check`.
+    r#"
+CREATE TABLE nodes_new (
+  id             TEXT PRIMARY KEY,
+  canvas_id      TEXT NOT NULL REFERENCES canvases(id) ON DELETE CASCADE,
+  kind           TEXT NOT NULL CHECK (kind IN ('task','note')),
+  title          TEXT NOT NULL DEFAULT '',
+  body           TEXT NOT NULL DEFAULT '',
+  status         TEXT CHECK (status IN ('todo','in_progress','done','blocked','foreign')),
+  color          TEXT,
+  x              REAL NOT NULL,
+  y              REAL NOT NULL,
+  width          REAL,
+  height         REAL,
+  created_at     INTEGER NOT NULL,
+  updated_at     INTEGER NOT NULL,
+  kb_path        TEXT,
+  kb_result_path TEXT,
+  status_rank    REAL,
+  prev_status    TEXT CHECK (prev_status IN ('todo','in_progress','done','foreign')),
+  sticker_of     TEXT REFERENCES nodes(id) ON DELETE CASCADE
+);
+INSERT INTO nodes_new (id, canvas_id, kind, title, body, status, color, x, y, width, height,
+                       created_at, updated_at, kb_path, kb_result_path, status_rank)
+SELECT id, canvas_id, kind, title, body, status, color, x, y, width, height,
+       created_at, updated_at, kb_path, kb_result_path, status_rank
+FROM nodes;
+DROP TABLE nodes;
+ALTER TABLE nodes_new RENAME TO nodes;
+CREATE INDEX idx_nodes_canvas ON nodes(canvas_id);
+CREATE INDEX idx_nodes_kb_path ON nodes(kb_path);
+CREATE INDEX idx_nodes_kb_result_path ON nodes(kb_result_path);
+CREATE INDEX idx_nodes_sticker ON nodes(sticker_of) WHERE sticker_of IS NOT NULL;
+CREATE TRIGGER trg_nodes_status_rank AFTER UPDATE OF status ON nodes
+WHEN OLD.status IS NOT NEW.status
+BEGIN
+  UPDATE nodes SET status_rank = NULL WHERE id = NEW.id;
+END;
+ALTER TABLE edges ADD COLUMN kind TEXT NOT NULL DEFAULT 'link' CHECK (kind IN ('link','blocks'));
+"#,
 ];
+
+/// Версии (`user_version` после миграции), которые пересобирают таблицы и
+/// потому выполняются с `PRAGMA foreign_keys = OFF` (внутри транзакции прагма
+/// не действует — её меняет `migrate` до и после).
+pub const FK_OFF: &[usize] = &[6];

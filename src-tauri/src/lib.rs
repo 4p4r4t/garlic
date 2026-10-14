@@ -64,6 +64,8 @@ pub fn run() {
             commands::count_descendants,
             commands::create_edge,
             commands::delete_edges,
+            commands::block_task,
+            commands::stick,
             commands::snapshot_graph,
             commands::restore_graph,
             commands::load_level_neighbors,

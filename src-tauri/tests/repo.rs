@@ -38,6 +38,8 @@ fn edge(conn: &Connection, canvas: &str, s: &str, t: &str) -> Result<String, App
             target: t.into(),
             source_handle: Some(HandleSide::Right),
             target_handle: Some(HandleSide::Left),
+            kind: Default::default(),
+            id: None,
         },
     )
     .map(|e| e.id)

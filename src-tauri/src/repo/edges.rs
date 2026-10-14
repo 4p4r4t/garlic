@@ -2,9 +2,10 @@ use rusqlite::{params, Connection, Row};
 
 use super::{canvases, new_id, nodes, parse_col};
 use crate::error::{AppError, AppResult};
-use crate::model::{Edge, HandleSide, NewEdge};
+use crate::model::{Edge, EdgeKind, HandleSide, NewEdge, NodeKind};
 
-pub(crate) const COLS: &str = "id, canvas_id, source, target, source_handle, target_handle, label";
+pub(crate) const COLS: &str =
+    "id, canvas_id, source, target, source_handle, target_handle, label, kind";
 
 fn handle_col(r: &Row<'_>, idx: usize) -> rusqlite::Result<Option<HandleSide>> {
     r.get::<_, Option<String>>(idx)?
@@ -21,7 +22,26 @@ pub(crate) fn from_row(r: &Row<'_>) -> rusqlite::Result<Edge> {
         source_handle: handle_col(r, 4)?,
         target_handle: handle_col(r, 5)?,
         label: r.get(6)?,
+        kind: parse_col(7, r.get(7)?)?,
     })
+}
+
+/// Вставка связи «как было» (undo, перестройки).
+pub(crate) fn insert_full(conn: &Connection, e: &Edge) -> AppResult<()> {
+    conn.execute(
+        &format!("INSERT INTO edges ({COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)"),
+        params![
+            e.id,
+            e.canvas_id,
+            e.source,
+            e.target,
+            e.source_handle.map(HandleSide::as_str),
+            e.target_handle.map(HandleSide::as_str),
+            e.label,
+            e.kind.as_str()
+        ],
+    )?;
+    Ok(())
 }
 
 pub fn list_by_canvas(conn: &Connection, canvas_id: &str) -> AppResult<Vec<Edge>> {
@@ -67,27 +87,50 @@ pub fn create(conn: &Connection, input: &NewEdge) -> AppResult<Edge> {
     if !target_ok {
         return Err(AppError::Invalid("целевая нода на другом холсте".into()));
     }
-    let dup: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM edges WHERE canvas_id = ?1 AND source = ?2 AND target = ?3)",
-        params![canvas.id, source.id, target.id],
-        |r| r.get(0),
-    )?;
-    if dup {
+    if input.kind == EdgeKind::Blocks {
+        // «Блокирует» (ТЗ §4.12.7): задача → задача одного холста.
+        if source.kind != NodeKind::Task || target.kind != NodeKind::Task {
+            return Err(AppError::Invalid(
+                "«блокирует» — только между задачами".into(),
+            ));
+        }
+        if source.canvas_id != canvas.id || target.canvas_id != canvas.id {
+            return Err(AppError::Invalid(
+                "«блокирует» — только между задачами одного холста".into(),
+            ));
+        }
+    }
+    if exists_pair(conn, &canvas.id, &source.id, &target.id, input.kind)? {
         return Err(AppError::Invalid("такая связь уже есть".into()));
     }
-    let id = new_id();
-    conn.execute(
-        &format!("INSERT INTO edges ({COLS}) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL)"),
-        params![
-            id,
-            canvas.id,
-            source.id,
-            target.id,
-            input.source_handle.map(HandleSide::as_str),
-            input.target_handle.map(HandleSide::as_str),
-        ],
-    )?;
-    get(conn, &id)
+    let edge = Edge {
+        id: input.id.clone().unwrap_or_else(new_id),
+        canvas_id: canvas.id,
+        source: source.id,
+        target: target.id,
+        source_handle: input.source_handle,
+        target_handle: input.target_handle,
+        label: None,
+        kind: input.kind,
+    };
+    insert_full(conn, &edge)?;
+    get(conn, &edge.id)
+}
+
+/// Есть ли на холсте стрелка того же вида source → target.
+pub(crate) fn exists_pair(
+    conn: &Connection,
+    canvas_id: &str,
+    source: &str,
+    target: &str,
+    kind: EdgeKind,
+) -> AppResult<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM edges
+                       WHERE canvas_id = ?1 AND source = ?2 AND target = ?3 AND kind = ?4)",
+        params![canvas_id, source, target, kind.as_str()],
+        |r| r.get(0),
+    )?)
 }
 
 /// Удаляет связи. Возвращает число реально удалённых.

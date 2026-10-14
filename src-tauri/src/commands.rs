@@ -26,6 +26,20 @@ impl Db {
 
 type Cmd<'a> = State<'a, Db>;
 
+/// Tauri-событие с итогом пересчёта блокировок (`BlockSync`, ТЗ §4.12.7).
+pub const BLOCKS_EVENT: &str = "graph:blocks";
+
+/// После изменения, которое может нарушить инвариант блокировок: пересчитать
+/// (`repo::blocks::sync`) и сообщить фронту, какие задачи (раз)блокировались.
+fn synced(app: &tauri::AppHandle, conn: &Connection) -> AppResult<()> {
+    use tauri::Emitter;
+    let s = repo::blocks::sync(conn)?;
+    if !s.is_empty() {
+        let _ = app.emit(BLOCKS_EVENT, s);
+    }
+    Ok(())
+}
+
 // ---- пространства ----
 
 #[tauri::command]
@@ -105,7 +119,14 @@ pub async fn update_node(
         }
         _ => (None, None),
     };
-    let node = crate::kblink::update_node(&*db.conn()?, root.as_deref(), &id, &patch)?;
+    let node = {
+        let conn = db.conn()?;
+        let node = crate::kblink::update_node(&conn, root.as_deref(), &id, &patch)?;
+        if patch.status.is_some() {
+            synced(&app, &conn)?;
+        }
+        node
+    };
     if let (Some(root), Some(before), Some(old), Some(new)) =
         (&root, &before, old_path, &node.kb_path)
     {
@@ -118,11 +139,15 @@ pub async fn update_node(
 
 #[tauri::command]
 pub async fn set_status_many(
+    app: tauri::AppHandle,
     db: Cmd<'_>,
     ids: Vec<String>,
     status: TaskStatus,
 ) -> AppResult<Vec<Node>> {
-    repo::nodes::set_status_many(&*db.conn()?, &ids, status)
+    let conn = db.conn()?;
+    let out = repo::nodes::set_status_many(&conn, &ids, status)?;
+    synced(&app, &conn)?;
+    Ok(out)
 }
 
 #[tauri::command]
@@ -131,8 +156,15 @@ pub async fn move_nodes(db: Cmd<'_>, positions: Vec<NodePosition>) -> AppResult<
 }
 
 #[tauri::command]
-pub async fn delete_nodes(db: Cmd<'_>, ids: Vec<String>) -> AppResult<usize> {
-    repo::nodes::delete_many(&*db.conn()?, &ids)
+pub async fn delete_nodes(
+    app: tauri::AppHandle,
+    db: Cmd<'_>,
+    ids: Vec<String>,
+) -> AppResult<usize> {
+    let conn = db.conn()?;
+    let n = repo::nodes::delete_many(&conn, &ids)?;
+    synced(&app, &conn)?;
+    Ok(n)
 }
 
 #[tauri::command]
@@ -143,13 +175,61 @@ pub async fn count_descendants(db: Cmd<'_>, node_id: String) -> AppResult<i64> {
 // ---- связи ----
 
 #[tauri::command]
-pub async fn create_edge(db: Cmd<'_>, input: NewEdge) -> AppResult<Edge> {
-    repo::edges::create(&*db.conn()?, &input)
+pub async fn create_edge(app: tauri::AppHandle, db: Cmd<'_>, input: NewEdge) -> AppResult<Edge> {
+    let conn = db.conn()?;
+    let e = repo::edges::create(&conn, &input)?;
+    synced(&app, &conn)?;
+    Ok(e)
 }
 
 #[tauri::command]
-pub async fn delete_edges(db: Cmd<'_>, ids: Vec<String>) -> AppResult<usize> {
-    repo::edges::delete_many(&*db.conn()?, &ids)
+pub async fn delete_edges(
+    app: tauri::AppHandle,
+    db: Cmd<'_>,
+    ids: Vec<String>,
+) -> AppResult<usize> {
+    let conn = db.conn()?;
+    let n = repo::edges::delete_many(&conn, &ids)?;
+    synced(&app, &conn)?;
+    Ok(n)
+}
+
+// ---- блокировки (ТЗ §4.12.7) ----
+
+/// «Заблокировать…»: стикер «Чужая» с причиной на задаче → стикер.
+#[tauri::command]
+pub async fn block_task(
+    app: tauri::AppHandle,
+    db: Cmd<'_>,
+    task_id: String,
+    reason: String,
+) -> AppResult<Node> {
+    let conn = db.conn()?;
+    let n = repo::blocks::block_task(&conn, &task_id, &reason)?;
+    synced(&app, &conn)?;
+    Ok(n)
+}
+
+/// Приклеить ноду стикером к задаче (`target`) или оторвать (`target = null`).
+#[tauri::command]
+pub async fn stick(
+    app: tauri::AppHandle,
+    db: Cmd<'_>,
+    id: String,
+    target: Option<String>,
+    pos: Option<NodePosition>,
+    edge_id: Option<String>,
+) -> AppResult<crate::model::StickResult> {
+    let conn = db.conn()?;
+    let r = repo::blocks::stick(
+        &conn,
+        &id,
+        target.as_deref(),
+        pos.map(|p| (p.x, p.y)),
+        edge_id,
+    )?;
+    synced(&app, &conn)?;
+    Ok(r)
 }
 
 // ---- undo/redo (ТЗ M6a) ----
@@ -166,8 +246,15 @@ pub async fn snapshot_graph(
 
 /// Вернуть снимок с теми же id. Файлы базы знаний не трогаются.
 #[tauri::command]
-pub async fn restore_graph(db: Cmd<'_>, snapshot: GraphSnapshot) -> AppResult<usize> {
-    repo::history::restore(&*db.conn()?, &snapshot)
+pub async fn restore_graph(
+    app: tauri::AppHandle,
+    db: Cmd<'_>,
+    snapshot: GraphSnapshot,
+) -> AppResult<usize> {
+    let conn = db.conn()?;
+    let n = repo::history::restore(&conn, &snapshot)?;
+    synced(&app, &conn)?;
+    Ok(n)
 }
 
 // ---- дерево задач (ТЗ §4.12, M7a) ----
@@ -193,28 +280,42 @@ pub async fn list_descendants(
 /// Удаление задач с выбором судьбы подзадач (ТЗ §4.12.3).
 #[tauri::command]
 pub async fn delete_nodes_with(
+    app: tauri::AppHandle,
     db: Cmd<'_>,
     ids: Vec<String>,
     edge_ids: Vec<String>,
     mode: crate::model::DeleteMode,
 ) -> AppResult<crate::model::RegionChange> {
-    repo::restructure::delete_with_mode(&*db.conn()?, &ids, &edge_ids, mode)
+    let conn = db.conn()?;
+    let c = repo::restructure::delete_with_mode(&conn, &ids, &edge_ids, mode)?;
+    synced(&app, &conn)?;
+    Ok(c)
 }
 
 /// «Перенести в задачу…» (ТЗ §4.12.3).
 #[tauri::command]
 pub async fn move_into_task(
+    app: tauri::AppHandle,
     db: Cmd<'_>,
     ids: Vec<String>,
     target: String,
 ) -> AppResult<crate::model::RegionChange> {
-    repo::restructure::move_into_task(&*db.conn()?, &ids, &target)
+    let conn = db.conn()?;
+    let c = repo::restructure::move_into_task(&conn, &ids, &target)?;
+    synced(&app, &conn)?;
+    Ok(c)
 }
 
 /// Undo/redo перестройки: привести холсты области к снимку.
 #[tauri::command]
-pub async fn apply_region(db: Cmd<'_>, snapshot: crate::model::RegionSnapshot) -> AppResult<()> {
-    repo::restructure::apply_region(&*db.conn()?, &snapshot)
+pub async fn apply_region(
+    app: tauri::AppHandle,
+    db: Cmd<'_>,
+    snapshot: crate::model::RegionSnapshot,
+) -> AppResult<()> {
+    let conn = db.conn()?;
+    repo::restructure::apply_region(&conn, &snapshot)?;
+    synced(&app, &conn)
 }
 
 // ---- состояние приложения ----

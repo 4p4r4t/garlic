@@ -21,6 +21,28 @@ pub enum TaskStatus {
     Todo,
     InProgress,
     Done,
+    /// «Заблокирована» (ТЗ §4.12.7): ставится только блокировкой — у задачи есть
+    /// незавершённый блокирующий (стикер или стрелка «блокирует»).
+    Blocked,
+    /// «Чужая» (ТЗ §4.12.7): чужая работа; стикер-причина блокировки.
+    Foreign,
+}
+
+impl TaskStatus {
+    /// Статус, который нельзя поставить напрямую (только блокировкой).
+    pub fn is_blocked(self) -> bool {
+        self == Self::Blocked
+    }
+}
+
+/// Вид стрелки (ТЗ §4.12.7): обычная или «блокирует» (оторванный стикер →
+/// заблокированная задача, пунктир).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EdgeKind {
+    #[default]
+    Link,
+    Blocks,
 }
 
 /// Роль ссылки ноды на базу знаний (ТЗ §4.11): у ноды-заметки — её `.md`
@@ -70,7 +92,8 @@ macro_rules! str_enum {
 }
 
 str_enum!(NodeKind { Task => "task", Note => "note" });
-str_enum!(TaskStatus { Todo => "todo", InProgress => "in_progress", Done => "done" });
+str_enum!(TaskStatus { Todo => "todo", InProgress => "in_progress", Done => "done", Blocked => "blocked", Foreign => "foreign" });
+str_enum!(EdgeKind { Link => "link", Blocks => "blocks" });
 str_enum!(LinkRole { Note => "note", Comment => "comment", Result => "result" });
 str_enum!(HandleSide { Top => "top", Right => "right", Bottom => "bottom", Left => "left" });
 
@@ -145,6 +168,14 @@ pub struct Node {
     pub kb_result_path: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+    /// Только у заблокированной задачи: статус, в который она вернётся при
+    /// разблокировке (ТЗ §4.12.7).
+    #[serde(default)]
+    pub prev_status: Option<TaskStatus>,
+    /// Стикер (ТЗ §4.12.7): задача, к которой он прикреплён. Тогда `x`/`y` —
+    /// смещение от левого верхнего угла этой задачи, а не мировые координаты.
+    #[serde(default)]
+    pub sticker_of: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -157,6 +188,8 @@ pub struct Edge {
     pub source_handle: Option<HandleSide>,
     pub target_handle: Option<HandleSide>,
     pub label: Option<String>,
+    #[serde(default)]
+    pub kind: EdgeKind,
 }
 
 /// Прогресс подзадач задачи: задачи (`kind = task`) её **прямого** вложенного
@@ -248,6 +281,11 @@ pub struct NewEdge {
     pub source_handle: Option<HandleSide>,
     #[serde(default)]
     pub target_handle: Option<HandleSide>,
+    #[serde(default)]
+    pub kind: EdgeKind,
+    /// Заданный id (повтор отменённого шага); `None` — новый.
+    #[serde(default)]
+    pub id: Option<String>,
 }
 
 /// Отличает «поле отсутствует» (`None`) от «поле = null» (`Some(None)`).
@@ -420,4 +458,27 @@ pub struct GraphSnapshot {
     /// Сначала сами ноды (в порядке запроса), затем ноды вложенных холстов.
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
+}
+
+/// Итог пересчёта блокировок (`repo::blocks::sync`): задачи, которые стали
+/// заблокированными и которые разблокировались (с новым статусом).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BlockSync {
+    pub blocked: Vec<Node>,
+    pub unblocked: Vec<Node>,
+}
+
+impl BlockSync {
+    pub fn is_empty(&self) -> bool {
+        self.blocked.is_empty() && self.unblocked.is_empty()
+    }
+}
+
+/// Результат `stick`: стикер (или освобождённая нода) и созданная стрелка «блокирует».
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StickResult {
+    pub node: Node,
+    pub edge: Option<Edge>,
 }
