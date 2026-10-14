@@ -162,7 +162,10 @@ function bumpAll(version) {
 function cargoEnv() {
   const env = { ...process.env };
   const bin = join(process.env.USERPROFILE ?? process.env.HOME ?? "", ".cargo", "bin");
-  if (existsSync(bin)) env.PATH = `${bin}${WIN ? ";" : ":"}${env.PATH ?? ""}`;
+  // На Windows ключ обычно «Path»: в копии process.env регистр важен, поэтому
+  // дописываем к существующему ключу, а не заводим второй «PATH».
+  const key = Object.keys(env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
+  if (existsSync(bin)) env[key] = `${bin}${WIN ? ";" : ":"}${env[key] ?? ""}`;
   return env;
 }
 
